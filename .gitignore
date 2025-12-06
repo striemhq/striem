@@ -1,0 +1,9 @@
+/target
+/data
+**/src/proto/*
+!*/src/proto/mod.rs
+**/.DS_Store
+*.sw[a-z]
+.vscode/*
+**/.env
+*.db

@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+
+default-members = ["striem"]
+
+members = [
+  "striem",
+  "lib/*"]
+
+[workspace.dependencies]
+anyhow = "1.0"
+arc-swap = "1"
+arrow = "56.2"
+arrow-json = "56.2"
+async-trait = "0.1"
+axum = { version = "0.8"}
+backoff = { version = "0.4", features = ["tokio"]}
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.15"
+duckdb = { version = "1.4", features = ["modern-full", "json", "parquet", "vtab", "bundled", "r2d2" ] }
+env_logger = "0.11"
+erased-serde = "0.4"
+futures = "0.3.31"
+futures-util = "0.3"
+glob = "0.3"
+lazy_static = {version = "1.5"}
+log = "0.4"
+num_enum = "0.7"
+parquet = { version = "56.2", features = ["json", "async", "tokio"] }
+prost = { version = "0.13" }
+prost-types = "0.13"
+r2d2 = "0.8"
+r2d2_sqlite = "0.31"
+regex = "1.11"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+rmcp = { version = "0.8", features = ["client", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+rusqlite = "0.37"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+sigmars = { git = "https://github.com/crowdalert/sigmars.git", branch = "taxonomy" }
+tempfile = "3"
+tokio = { version = "1.41", features = ["full"] }
+tokio-stream = "0.1"
+toml = { version = "0.9", default-features = false, features = ["serde", "display"] }
+tonic = { version = "0.13", default-features = false, features = ["transport", "codegen", "prost", "gzip", "router"] }
+tonic-build = { version = "0.13", default-features = false, features = ["transport", "prost"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+url = "2.5"
+uuid = { version = "1.11", features = ["v7", "serde"] }

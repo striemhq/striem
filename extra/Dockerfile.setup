@@ -1,0 +1,23 @@
+FROM alpine/git:latest
+
+RUN apk add --no-cache bash
+
+ENV SCHEMA_URL="https://github.com/crowdalert/ocsf-parquet.git"
+ENV REMAP_URL="https://github.com/crowdalert/ocsf-vrl.git"
+
+ENV DEST_DIR="/data"
+
+ENTRYPOINT [ "bash" ]
+
+CMD [ "-c", \
+        "mkdir -p ${DEST_DIR}/storage ${DEST_DIR}/detections && \
+        if [ ! -d \"${DEST_DIR}/schema/.git\" ]; then \
+            git clone --depth=1 \"${SCHEMA_URL}\" \"${DEST_DIR}/schema\"; \
+        else \
+            echo \"Schema already exists in ${DEST_DIR}/schema, skipping clone.\"; \
+        fi; \
+        if [ ! -d \"${DEST_DIR}/remaps/.git\" ]; then \
+            git clone --depth=1 \"${REMAP_URL}\" \"${DEST_DIR}/remaps\"; \
+        else \
+            echo \"Remaps already exists in ${DEST_DIR}/remaps, skipping clone.\"; \
+        fi" ]

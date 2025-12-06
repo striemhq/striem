@@ -1,0 +1,55 @@
+services:
+  setup:
+    build:
+      context: .
+      dockerfile: extra/Dockerfile.setup
+    volumes:
+      - ./data:/data
+    restart: "no"
+
+  striem:
+    image: striem:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - STRIEM_DB=/data
+      - STRIEM_API_ENABLED=1
+      - STRIEM_API_ADDRESS=0.0.0.0:8080
+      - STRIEM_INPUT_VECTOR_URL=http://striem:3000
+      - STRIEM_OUTPUT_VECTOR_URL=http://vector:9000
+      - STRIEM_OUTPUT_VECTOR_HTTP_ADDRESS=0.0.0.0:9900
+      - STRIEM_OUTPUT_VECTOR_HEC_ADDRESS=0.0.0.0:9990
+      - STRIEM_OUTPUT_VECTOR_API_ADDRESS=0.0.0.0:9999
+      - STRIEM_DETECTIONS=/data/detections
+      - STRIEM_STORAGE_SCHEMA=/data/schema/1.4.0
+      - STRIEM_STORAGE_PATH=/data/storage
+      - STRIEM_REMAPS=/data/remaps
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:nightly-distroless-libc
+    volumes:
+      - ./extra/vector.yaml:/etc/vector/vector.yaml:ro
+      - ./data:/data:ro
+    environment:
+      - STRIEM_REMAPS=/data/remaps
+    ports:
+      - "9000:9000"
+      - "9900:9900"
+      - "9990:9990"
+      - "9999:9999"
+    depends_on:
+      striem:
+        condition: service_started
+    restart: unless-stopped
+    links:
+      - striem

@@ -1,0 +1,586 @@
+/* ===========================
+   Button Styles
+   =========================== */
+
+.btn-primary {
+  @apply px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors;
+}
+
+.btn-ghost {
+  @apply px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors;
+}
+
+.btn-action {
+  @apply px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-link {
+  @apply text-blue-600 hover:text-blue-800 hover:underline;
+}
+
+.btn-link-sm {
+  @apply text-xs text-blue-600 hover:text-blue-800 font-medium;
+}
+
+.btn-tab {
+  @apply px-4 py-1.5 rounded text-sm font-medium transition-colors;
+}
+
+.btn-disabled {
+  @apply disabled:opacity-50 disabled:bg-gray-300 disabled:cursor-not-allowed;
+}
+
+/* ===========================
+   Input & Form Styles
+   =========================== */
+
+.input-base {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+}
+
+.input-error {
+  @apply border-red-300 focus:border-red-500 focus:ring-red-500;
+}
+
+.input-sm {
+  @apply px-2 py-1 border border-gray-300 rounded text-sm;
+}
+
+.checkbox-base {
+  @apply h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500;
+}
+
+.radio-base {
+  @apply h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500;
+}
+
+.label-base {
+  @apply block text-sm font-medium text-gray-700 mb-2;
+}
+
+.label-inline {
+  @apply text-sm font-medium text-gray-700;
+}
+
+.label-sm {
+  @apply text-sm text-gray-600;
+}
+
+.textarea-base {
+  @apply w-full h-48 p-3 font-mono text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y;
+}
+
+.select-base {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+/* ===========================
+   Card & Container Styles
+   =========================== */
+
+.card {
+  @apply bg-white rounded-lg shadow p-6;
+}
+
+.card-bordered {
+  @apply bg-white rounded-lg border border-gray-200 p-4;
+}
+
+.card-hover {
+  @apply bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow;
+}
+
+.panel {
+  @apply bg-white border-b border-gray-200 px-6 py-4;
+}
+
+.panel-section {
+  @apply bg-gray-50 rounded-lg p-4;
+}
+
+.info-box {
+  @apply bg-gray-50 rounded-lg p-4 space-y-2;
+}
+
+/* ===========================
+   Modal Styles
+   =========================== */
+
+.modal-overlay {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4;
+}
+
+.modal-base {
+  @apply bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col;
+}
+
+.modal-md {
+  @apply bg-white rounded-lg max-w-md w-full overflow-hidden;
+}
+
+.modal-lg {
+  @apply bg-white rounded-lg max-w-2xl w-full overflow-hidden;
+}
+
+.modal-header {
+  @apply px-6 py-4 border-b border-gray-200 flex justify-between items-start;
+}
+
+.modal-body {
+  @apply flex-1 overflow-y-auto p-6;
+}
+
+.modal-footer {
+  @apply px-6 py-4 border-t border-gray-200 flex justify-end gap-3;
+}
+
+.modal-close {
+  @apply text-gray-400 hover:text-gray-600 text-2xl leading-none;
+}
+
+/* ===========================
+   Table Styles
+   =========================== */
+
+.table-base {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+.table-head {
+  @apply bg-gray-50;
+}
+
+.table-head-dark {
+  @apply bg-gray-100;
+}
+
+.table-header-cell {
+  @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+}
+
+.table-header-cell-sm {
+  @apply px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase;
+}
+
+.table-body {
+  @apply bg-white divide-y divide-gray-200;
+}
+
+.table-row-hover {
+  @apply hover:bg-gray-50;
+}
+
+.table-cell {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+}
+
+.table-cell-sm {
+  @apply px-4 py-2 text-sm text-gray-900;
+}
+
+.table-cell-mono {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono;
+}
+
+/* ===========================
+   Badge & Status Styles
+   =========================== */
+
+.badge-base {
+  @apply inline-flex px-3 py-1 text-xs font-medium rounded-full;
+}
+
+.badge-count {
+  @apply bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full;
+}
+
+.badge-count-sm {
+  @apply bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded;
+}
+
+.badge-pill {
+  @apply ml-2 text-xs bg-gray-200 px-2 py-0.5 rounded-full;
+}
+
+/* Severity badges */
+.badge-critical {
+  @apply bg-red-100 text-red-800 border-red-300;
+}
+
+.badge-high {
+  @apply bg-orange-100 text-orange-800 border-orange-300;
+}
+
+.badge-medium {
+  @apply bg-yellow-100 text-yellow-800 border-yellow-300;
+}
+
+.badge-low {
+  @apply bg-blue-100 text-blue-800 border-blue-300;
+}
+
+.badge-info {
+  @apply bg-gray-100 text-gray-800 border-gray-300;
+}
+
+/* Status indicators */
+.status-active {
+  @apply text-green-600 font-medium;
+}
+
+.status-inactive {
+  @apply text-gray-500;
+}
+
+.status-dot {
+  @apply inline-block w-2 h-2 rounded-full;
+}
+
+.status-dot-success {
+  @apply bg-green-500;
+}
+
+.status-dot-error {
+  @apply bg-red-500;
+}
+
+/* ===========================
+   Alert & Message Styles
+   =========================== */
+
+.alert-error {
+  @apply bg-red-50 border border-red-200 rounded-lg p-4;
+}
+
+.alert-warning {
+  @apply bg-yellow-50 border border-yellow-200 rounded-lg p-3;
+}
+
+.alert-info {
+  @apply bg-gray-50 border border-gray-200 rounded-lg p-4;
+}
+
+.alert-icon-error {
+  @apply text-red-400 text-xl;
+}
+
+.alert-icon-warning {
+  @apply text-yellow-600 text-lg;
+}
+
+.alert-title-error {
+  @apply text-sm font-medium text-red-800 mb-1;
+}
+
+.alert-text-error {
+  @apply text-sm text-red-700;
+}
+
+.alert-text-warning {
+  @apply text-sm text-yellow-800;
+}
+
+/* ===========================
+   Layout Styles
+   =========================== */
+
+.container-full {
+  @apply flex-1 overflow-auto;
+}
+
+.container-padded {
+  @apply p-8;
+}
+
+.container-section {
+  @apply mb-8;
+}
+
+.flex-center {
+  @apply flex items-center justify-center;
+}
+
+.flex-between {
+  @apply flex items-center justify-between;
+}
+
+.flex-start {
+  @apply flex items-start;
+}
+
+.flex-col-full {
+  @apply h-full flex flex-col;
+}
+
+.space-y-form {
+  @apply space-y-6;
+}
+
+.space-y-content {
+  @apply space-y-4;
+}
+
+.divider {
+  @apply border-t border-gray-200 my-6;
+}
+
+/* ===========================
+   Typography Styles
+   =========================== */
+
+.heading-page {
+  @apply text-3xl font-bold text-gray-900 mb-2;
+}
+
+.heading-section {
+  @apply text-2xl font-semibold text-gray-900;
+}
+
+.heading-card {
+  @apply text-lg font-semibold text-gray-900;
+}
+
+.heading-subsection {
+  @apply text-lg font-medium text-gray-900;
+}
+
+.text-description {
+  @apply text-gray-600;
+}
+
+.text-muted {
+  @apply text-sm text-gray-600;
+}
+
+.text-muted-xs {
+  @apply text-xs text-gray-500;
+}
+
+.text-helper {
+  @apply text-sm text-gray-600 mt-1;
+}
+
+.text-error {
+  @apply text-sm text-red-600 mt-1;
+}
+
+.text-mono {
+  @apply font-mono text-xs;
+}
+
+.text-mono-dark {
+  @apply text-gray-900 font-mono text-xs;
+}
+
+/* ===========================
+   Dropdown & Menu Styles
+   =========================== */
+
+.dropdown-menu {
+  @apply absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200;
+}
+
+.dropdown-item {
+  @apply block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 first:rounded-t-md last:rounded-b-md;
+}
+
+/* ===========================
+   Sidebar & Navigation
+   =========================== */
+
+.sidebar {
+  @apply w-64 bg-slate-800 text-white flex flex-col;
+}
+
+.sidebar-header {
+  @apply p-6 border-b border-slate-700;
+}
+
+.sidebar-nav {
+  @apply py-6;
+}
+
+.nav-button {
+  @apply w-full flex items-center gap-3 px-6 py-4 text-left transition-colors;
+}
+
+.nav-button-active {
+  @apply bg-blue-600 text-white;
+}
+
+.nav-button-inactive {
+  @apply text-gray-300 hover:bg-slate-700 hover:text-white;
+}
+
+/* ===========================
+   Tab Styles
+   =========================== */
+
+.tabs-container {
+  @apply flex;
+}
+
+.tab-button {
+  @apply px-6 py-3 text-sm font-medium border-b-2 transition-colors;
+}
+
+.tab-active {
+  @apply text-blue-600 border-blue-600;
+}
+
+.tab-inactive {
+  @apply text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300;
+}
+
+/* ===========================
+   Loading & Empty States
+   =========================== */
+
+.loading-container {
+  @apply h-full flex items-center justify-center;
+}
+
+.loading-text {
+  @apply text-lg text-gray-600;
+}
+
+.error-container {
+  @apply h-full flex items-center justify-center;
+}
+
+.error-text {
+  @apply text-lg text-red-600;
+}
+
+.empty-state {
+  @apply text-center py-12 text-gray-500;
+}
+
+.spinner {
+  @apply inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin;
+}
+
+/* ===========================
+   Toggle Switch
+   =========================== */
+
+/* Note: peer and peer-* classes cannot be used in @apply in Tailwind v4.
+   Use these classes directly in HTML instead: peer, peer-focus:*, peer-checked:*
+   This is a base toggle style without peer functionality */
+.toggle-switch-base {
+  @apply w-11 h-6 bg-gray-200 rounded-full relative;
+}
+
+.toggle-switch-slider {
+  @apply absolute top-[2px] left-[2px] bg-white border-gray-300 border rounded-full h-5 w-5 transition-all;
+}
+
+/* ===========================
+   Utility Classes
+   =========================== */
+
+.overflow-ellipsis {
+  @apply overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.grid-cols-form {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.max-w-form {
+  @apply max-w-2xl;
+}
+
+.shadow-hover {
+  @apply hover:shadow-md transition-shadow;
+}
+
+.break-word {
+  @apply break-all;
+}
+
+.code-block {
+  @apply text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto;
+}
+
+.code-block-dark {
+  @apply text-sm font-mono bg-gray-50 p-2 rounded overflow-x-auto;
+}
+
+/* ===========================
+   Search & Filter Styles
+   =========================== */
+
+.search-container {
+  @apply relative;
+}
+
+.search-icon {
+  @apply absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4;
+}
+
+.search-input {
+  @apply w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+.filter-button {
+  @apply flex items-center space-x-2 text-gray-700 hover:text-gray-900;
+}
+
+.chevron-icon {
+  @apply w-5 h-5 transform transition-transform;
+}
+
+.chevron-rotate {
+  @apply rotate-90;
+}
+
+/* ===========================
+   Date/Time Picker
+   =========================== */
+
+.datetime-input {
+  @apply px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+.time-range-container {
+  @apply flex items-center gap-4;
+}
+
+.time-label {
+  @apply flex items-center gap-2;
+}
+
+/* ===========================
+   Pre-formatted & Code
+   =========================== */
+
+.pre-json {
+  @apply text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto;
+}
+
+.pre-code {
+  @apply text-sm font-mono bg-gray-50 p-2 rounded overflow-x-auto;
+}
+
+.null-value {
+  @apply text-gray-400 italic;
+}
+
+/* ===========================
+   Responsive Utilities
+   =========================== */
+
+@layer components {
+  .responsive-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4;
+  }
+  
+  .responsive-text {
+    @apply text-sm md:text-base;
+  }
+}
