@@ -59,7 +59,7 @@ The fastest way to get started is using Docker Compose:
 
 ```bash
 # Clone the repository
-git clone https://github.com/sonnens/striem.git
+git clone https://github.com/striemhq/striem.git
 cd striem
 
 # Clone OCSF VRL transforms for data normalization
@@ -80,7 +80,7 @@ This will start:
 
 ```bash
 # Clone the repository
-git clone https://github.com/sonnens/striem.git
+git clone https://github.com/striemhq/striem.git
 cd striem
 
 # Clone OCSF VRL transforms for data normalization
@@ -423,5 +423,5 @@ This project is licensed under the MPLv2 License - see the [LICENSE](LICENSE) fi
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/sonnens/striem/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/sonnens/striem/discussions)
+- **Issues**: [GitHub Issues](https://github.com/striemhq/striem/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/striemhq/striem/discussions)
