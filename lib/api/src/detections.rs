@@ -28,20 +28,23 @@ async fn list_rules(
 ) -> Result<axum::Json<Vec<serde_json::Value>>, (axum::http::StatusCode, String)> {
     let rules = serde_json::to_value(&*state.detections.read().await)
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .as_array().map(|r| r.iter()
-                    .flat_map(|rule| {
-                        rule.as_object().and_then(|obj| {
-                            Some(serde_json::json!({
-                                "id": obj.get("id")?,
-                                "title": obj.get("title")?,
-                                "description": obj.get("description")?,
-                                "enabled": obj.get("enabled")?.as_bool().unwrap_or(true),
-                                "level": obj.get("level")?,
-                                "logsource": obj.get("logsource")?,
-                            }))
-                        })
+        .as_array()
+        .map(|r| {
+            r.iter()
+                .flat_map(|rule| {
+                    rule.as_object().and_then(|obj| {
+                        Some(serde_json::json!({
+                            "id": obj.get("id")?,
+                            "title": obj.get("title")?,
+                            "description": obj.get("description")?,
+                            "enabled": obj.get("enabled")?.as_bool().unwrap_or(true),
+                            "level": obj.get("level")?,
+                            "logsource": obj.get("logsource")?,
+                        }))
                     })
-                    .collect::<Vec<_>>())
+                })
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
     Ok(axum::Json(rules))
@@ -132,7 +135,7 @@ async fn post_rule(
         .add(rule)
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if let Some(striem_config::StringOrList::String(dir)) = &state.config.detections {
+    if let Some(striem_config::StringOrList::String(dir)) = &state.config.load().detections {
         let path = format!("{}/{}.yaml", dir, id);
         std::fs::write(&path, body).map_err(|e| {
             (

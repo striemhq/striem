@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
-use log::{debug, info};
-use striem_common::event::Event;
+use log::{debug, error, info};
+use striem_common::{SysMessage, event::Event};
 use tokio::sync::broadcast;
 
 use crate::{
@@ -111,7 +111,7 @@ impl Server {
     pub async fn serve(
         &mut self,
         addr: &std::net::SocketAddr,
-        mut shutdown: tokio::sync::broadcast::Receiver<()>,
+        mut shutdown: tokio::sync::broadcast::Receiver<SysMessage>,
     ) -> Result<()> {
         //let addr = addr.parse()?;
 
@@ -126,7 +126,16 @@ impl Server {
                     .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
             )
             .serve_with_shutdown(*addr, async {
-                let _ = shutdown.recv().await;
+                loop {
+                    match shutdown.recv().await {
+                        Ok(SysMessage::Shutdown) => break,
+                        Ok(_) => continue,
+                        Err(_) => {
+                            error!("system broadcast channel closed unexpectedly");
+                            break;
+                        }
+                    }
+                }
                 info!("Vector listener shutting down...");
             })
             .await?;

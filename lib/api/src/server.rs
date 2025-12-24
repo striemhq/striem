@@ -15,9 +15,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use arc_swap::ArcSwap;
 use axum::http::HeaderValue;
 use axum::middleware;
-use log::info;
+use log::{error, info};
 use sigmars::SigmaCollection;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
@@ -25,6 +26,8 @@ use tower_http::services::ServeDir;
 
 use striem_config::StrIEMConfig;
 use striem_config::StringOrList;
+
+use striem_common::SysMessage;
 
 use crate::{
     ApiState, actions::Mcp, features::feature_flag_middleware, initdb, persist,
@@ -42,16 +45,17 @@ use crate::{
 /// Serves Next.js static export from binary path or configured ui.path.
 /// Redirects / to /ui for convenience.
 pub async fn serve(
-    config: &StrIEMConfig,
+    config: &Arc<ArcSwap<StrIEMConfig>>,
     detections: Arc<RwLock<SigmaCollection>>,
-    mut shutdown: tokio::sync::broadcast::Receiver<()>,
+    sys: tokio::sync::broadcast::Sender<SysMessage>,
 ) -> Result<()> {
-    let data = config.storage.as_ref().map(|dir| dir.path.clone());
+    let config_container = config.clone();
+    let config = config.load();
 
     let mut features: Vec<String> = Vec::new();
 
     // Create DB connection pool
-    let db = initdb(config).inspect(|_| {
+    let db = initdb(&config).inspect(|_| {
         #[cfg(feature = "duckdb")]
         features.push("duckdb".to_string());
     });
@@ -99,9 +103,9 @@ pub async fn serve(
     let state = ApiState {
         detections,
         actions,
-        data,
         db,
-        config: config.clone(),
+        config: config_container,
+        sys: sys.clone(),
         features: HeaderValue::from_str(&features.join(","))?,
     };
 
@@ -134,7 +138,17 @@ pub async fn serve(
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            let _ = shutdown.recv().await;
+            let mut rx = sys.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(SysMessage::Shutdown) => break,
+                    Ok(_) => continue,
+                    Err(_) => {
+                        error!("system broadcast channel closed unexpectedly");
+                        break;
+                    }
+                }
+            }
             info!("API shutting down...");
         })
         .await?;

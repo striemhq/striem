@@ -4454,6 +4454,7 @@ name = "striem"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "async-trait",
  "backoff",
  "env_logger",
@@ -4478,6 +4479,7 @@ name = "striem_api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "arrow-json",
  "axum",
  "chrono",
@@ -4541,6 +4543,7 @@ dependencies = [
  "regex",
  "serde_json",
  "striem_common",
+ "striem_config",
  "tempfile",
  "tokio",
  "tokio-stream",

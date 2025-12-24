@@ -1,5 +1,6 @@
 mod actions;
 mod alerts;
+mod destination;
 mod detections;
 pub mod features;
 mod persist;
@@ -10,10 +11,12 @@ mod sinks;
 mod sources;
 mod vector;
 
+use arc_swap::ArcSwap;
 use log::error;
 
 use axum::http::HeaderValue;
 pub use server::serve;
+use striem_common::SysMessage;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -34,10 +37,10 @@ pub(crate) type Pool = ();
 pub(crate) struct ApiState {
     pub detections: Arc<RwLock<SigmaCollection>>,
     pub actions: Option<Arc<Mcp>>,
-    pub data: Option<String>,
     pub db: Option<Pool>,
     pub features: HeaderValue,
-    pub config: StrIEMConfig,
+    pub sys: tokio::sync::broadcast::Sender<SysMessage>,
+    pub config: Arc<ArcSwap<StrIEMConfig>>,
 }
 
 #[cfg(feature = "duckdb")]
@@ -58,21 +61,21 @@ pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
     ];
 
     if let Some(storage) = &config.storage {
-        allowed.push(format!("'{}'", &storage.path));
+        allowed.push(format!("'{}'", &storage.path.to_string_lossy()));
     }
 
     if let Some(ref dbpath) = config.db {
         std::fs::create_dir_all(dbpath)
             .map_err(anyhow::Error::from)
             .and_then(|_| {
-                let path = format!("{}/striem.db", dbpath);
+                let path = dbpath.join("striem.db");
 
-                allowed.extend([format!("'{}'", dbpath)]);
+                allowed.extend([format!("'{}'", dbpath.to_string_lossy())]);
 
                 let allowed_str = format!("[{}]", allowed.join(", "));
 
                 duckdb::DuckdbConnectionManager::file_with_flags(
-                    path.as_str(),
+                    path,
                     duckdb::Config::default()
                         .enable_object_cache(true)
                         .map_err(anyhow::Error::from)?,
@@ -93,7 +96,8 @@ pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
                                 .ok();
                         })
                         .map_err(anyhow::Error::from)
-                })})
+                })
+            })
             .and_then(|pool| {
                 let mut conn = pool.get().map_err(anyhow::Error::from)?;
                 crate::persist::init(&mut conn)?;
@@ -124,7 +128,8 @@ pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
                         .ok();
                 })
                 .map_err(anyhow::Error::from)
-        }).inspect_err(|e| {
+        })
+        .inspect_err(|e| {
             error!("{}", e);
         })
         .ok()

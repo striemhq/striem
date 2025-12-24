@@ -12,7 +12,7 @@
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use arrow::{array::RecordBatch, datatypes::SchemaRef};
-use log::{debug, trace};
+use log::{debug, error, trace};
 use parquet::arrow::{AsyncArrowWriter, arrow_writer::ArrowWriterOptions};
 use parquet::{
     basic::Compression,
@@ -21,6 +21,7 @@ use parquet::{
         properties::{WriterProperties, WriterVersion},
     },
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tokio::{fs::File, sync::Mutex};
@@ -30,14 +31,16 @@ type WriterInstance = Arc<ArcSwap<WriterInstanceMutex>>;
 /// Internal writer state with temporary file and final path.
 /// Separated to enable atomic rotation via ArcSwap.
 struct WriterImpl {
-    path: String,
     tempfile: NamedTempFile,
-    writer: AsyncArrowWriter<File>,
+    inner: AsyncArrowWriter<File>,
 }
 
 /// Manages Parquet file lifecycle: creation, buffering, rotation, finalization.
 /// Uses temporary files to avoid partial writes in final location.
+#[derive(Clone)]
 pub struct Writer {
+    base: Arc<ArcSwap<PathBuf>>,
+    subpath: PathBuf,
     schema: SchemaRef,
     inner: WriterInstance,
     // TODO: Make rotation interval configurable per-class for different retention needs
@@ -52,13 +55,11 @@ impl Writer {
     /// 2. Flushed to temporary file periodically
     /// 3. On rotation, temp file moved to final location with UUIDv7 name
     /// 4. Empty files (no row groups) are discarded to save storage
-    pub fn new(path: String, schema: SchemaRef) -> Result<Self> {
-        let writer = Arc::new(ArcSwap::from_pointee(Self::create_writer(
-            path.clone(),
-            schema.clone(),
-        )?));
-
+    pub fn new(base: Arc<ArcSwap<PathBuf>>, subpath: PathBuf, schema: SchemaRef) -> Result<Self> {
+        let writer = Arc::new(ArcSwap::from_pointee(Mutex::new(None)));
         Ok(Self {
+            base,
+            subpath,
             schema: schema.clone(),
             inner: writer.clone(),
             rotation_interval: tokio::time::Duration::from_secs(300),
@@ -70,24 +71,20 @@ impl Writer {
     /// # Rotation Timing
     /// Fixed 5-minute interval provides predictable file sizes and query patterns.
     /// High-volume classes may produce 100MB+ files; low-volume classes stay small.
-    pub async fn run(&mut self) -> Result<()> {
-        let path = self
-            .inner
-            .load()
-            .lock()
-            .await
-            .as_ref()
-            .map(|w| w.path.clone())
-            .ok_or_else(|| anyhow::anyhow!("Writer not initialized"))?;
-
+    pub async fn run(&self) -> Result<()> {
         tokio::spawn({
-            let schema = self.schema.clone();
-            let inner = self.inner.clone();
-            let rotation_interval = self.rotation_interval;
+            let cloned = self.clone();
             async move {
+                if let Ok(writer) = Self::create_writer(&cloned.schema) {
+                    cloned.inner.store(Arc::new(writer));
+                } else {
+                    error!("Failed to create initial Parquet writer");
+                    return;
+                }
+
                 loop {
-                    tokio::time::sleep(rotation_interval).await;
-                    Self::rotate(path.clone(), schema.clone(), inner.clone())
+                    tokio::time::sleep(cloned.rotation_interval).await;
+                    Self::rotate(&cloned.base, &cloned.subpath, &cloned.schema, &cloned.inner)
                         .await
                         .ok();
                 }
@@ -103,7 +100,7 @@ impl Writer {
     /// if process crashes mid-write. Only non-empty, finalized files appear.
     ///
     /// Trade-off: Extra disk I/O for atomic move, but negligible for 5min files.
-    fn create_writer(path: String, schema: SchemaRef) -> Result<WriterInstanceMutex> {
+    fn create_writer(schema: &SchemaRef) -> Result<WriterInstanceMutex> {
         let tempfile = NamedTempFile::new()?;
         trace!(
             "{} created temporary file: {}",
@@ -160,9 +157,8 @@ impl Writer {
         )?;
 
         Ok(Mutex::new(Some(WriterImpl {
-            path,
             tempfile,
-            writer,
+            inner: writer,
         })))
     }
 
@@ -175,32 +171,46 @@ impl Writer {
     /// # File Naming
     /// UUIDv7 provides time-ordered, collision-free names. Sorts chronologically
     /// in filesystem listings and DuckDB queries (`ORDER BY filename`).
-    async fn rotate(path: String, schema: SchemaRef, inner: WriterInstance) -> Result<()> {
-        let new_writer = Self::create_writer(path, schema.clone())?;
-        let guard = inner.swap(Arc::new(new_writer));
+    async fn rotate(
+        base: &Arc<ArcSwap<PathBuf>>,
+        path: &PathBuf,
+        schema: &SchemaRef,
+        inner: &WriterInstance,
+    ) -> Result<()> {
+        let new_writer = Self::create_writer(schema)?;
+        let old = inner.swap(Arc::new(new_writer));
+        let dir = base.load().join(path);
+        Self::finish(&old, schema, dir).await
+    }
 
+    /// Finalize old writer: flush, close, and move temp file if non-empty.
+    async fn finish(
+        guard: &Arc<WriterInstanceMutex>,
+        schema: &SchemaRef,
+        dir: PathBuf,
+    ) -> Result<()> {
         let old = guard.lock().await.take();
         if let Some(mut meta) = old {
-            meta.writer.finish().await?;
-            if !meta.writer.flushed_row_groups().is_empty()
-                && meta.writer.flushed_row_groups()[0].num_rows() != 0
+            meta.inner.finish().await?;
+            if !meta.inner.flushed_row_groups().is_empty()
+                && meta.inner.flushed_row_groups()[0].num_rows() != 0
             {
-                tokio::fs::create_dir_all(&meta.path).await?;
-                let path = format!("{}/{}.parquet", &meta.path, uuid::Uuid::now_v7());
+                let path = dir
+                    .join(format!("{}", uuid::Uuid::now_v7()))
+                    .with_extension("parquet");
                 trace!(
                     "{} wrote new file: {}",
                     schema
                         .metadata
                         .get("description")
                         .unwrap_or(&"unknown".into()),
-                    path
+                    path.as_os_str().display()
                 );
-                let (file, tmppath) = meta.tempfile.keep()?;
-                drop(file);
-                tokio::fs::copy(tmppath.clone(), path)
-                    .await
-                    .map(|_| tokio::fs::remove_file(tmppath))?
-                    .await?;
+                let (_, tmppath) = meta.tempfile.keep()?;
+
+                tokio::fs::create_dir_all(&dir).await?;
+                tokio::fs::copy(tmppath.clone(), path).await?;
+                tokio::fs::remove_file(tmppath).await?;
             }
         }
 
@@ -226,7 +236,7 @@ impl Writer {
             let guard = self.inner.load();
             let mut writer = guard.lock().await;
             if let Some(meta) = writer.as_mut() {
-                meta.writer.write(batch).await?;
+                meta.inner.write(batch).await?;
                 break;
             } else {
                 debug!("Writer is being rotated, retrying...");
@@ -239,18 +249,11 @@ impl Writer {
 impl Drop for Writer {
     fn drop(&mut self) {
         let guard = self.inner.load();
+        let schema = self.schema.clone();
+        let dir = self.base.load().join(&self.subpath);
+
         tokio::spawn(async move {
-            let mut writer = guard.lock().await;
-            if let Some(mut meta) = writer.take() {
-                let result = meta.writer.finish().await;
-                if result.is_ok() && meta.writer.bytes_written() != 0 {
-                    let _ = meta.tempfile.persist(format!(
-                        "{}/{}.parquet",
-                        &meta.path,
-                        uuid::Uuid::now_v7()
-                    ));
-                }
-            }
+            Self::finish(&guard, &schema, dir).await.ok();
         });
     }
 }

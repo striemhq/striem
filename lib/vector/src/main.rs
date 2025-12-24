@@ -13,6 +13,7 @@ pub mod vector {
     include!(concat!(env!("OUT_DIR"), "/proto/vector.rs"));
 }
 
+use striem_common::SysMessage;
 use tokio::main;
 
 use crate::server::Server;
@@ -37,14 +38,14 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+    let (tx, rx) = tokio::sync::broadcast::channel::<SysMessage>(1);
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         println!("Shutting down server...");
-        shutdown_tx.send(()).unwrap();
+        tx.send(SysMessage::Shutdown).unwrap();
     });
 
-    server.serve(&addr, shutdown_rx).await?;
+    server.serve(&addr, rx).await?;
 
     Ok(())
 }

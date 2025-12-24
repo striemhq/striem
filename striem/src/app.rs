@@ -12,19 +12,21 @@
 //!                                              ↓
 //!                                    detection findings → VectorClient → downstream
 
-use anyhow::{Result, anyhow};
-use backoff::{ExponentialBackoff, future::retry};
-use log::warn;
 use std::sync::Arc;
-use striem_common::event::Event;
-use striem_config::output::Destination;
-use tokio::sync::{RwLock, broadcast};
 
-use log::{debug, info};
+use anyhow::{Result, anyhow};
+use arc_swap::ArcSwap;
+use backoff::{ExponentialBackoff, future::retry};
+use log::{debug, error, info, warn};
+use serde_json::{Map, Value};
+use tokio::sync::{RwLock, broadcast};
 
 use sigmars::{MemBackend, SigmaCollection};
 
-use striem_config::{self as config, StrIEMConfig, StringOrList, input::Listener};
+use striem_common::{SysMessage, event::Event};
+use striem_config::{
+    self as config, StrIEMConfig, StringOrList, input::Listener, output::Destination,
+};
 
 use striem_api as api;
 use striem_storage as storage;
@@ -38,13 +40,13 @@ use crate::detection::DetectionHandler;
 pub struct App {
     /// Sigma detection rules with thread-safe access for concurrent evaluation and API updates
     pub detections: Arc<RwLock<SigmaCollection>>,
-    pub config: StrIEMConfig,
+    pub config: Arc<ArcSwap<StrIEMConfig>>,
     /// gRPC server accepting events from Vector pipeline
     server: VectorServer,
     /// Internal broadcast channel for detection findings (separate from upstream Vector events)
-    channel: broadcast::Sender<Arc<Vec<Event>>>,
-    /// Shutdown signal distributed to all spawned tasks for coordinated termination
-    shutdown: broadcast::Sender<()>,
+    events: broadcast::Sender<Arc<Vec<Event>>>,
+    /// etc
+    sys: broadcast::Sender<SysMessage>,
 }
 
 impl App {
@@ -55,22 +57,22 @@ impl App {
     /// - Broadcast channels use Arc<Vec<Event>> to minimize cloning overhead for multiple subscribers
     /// - Channel capacity of 64 provides backpressure without excessive buffering
     pub async fn new(config: StrIEMConfig) -> Result<Self> {
-        let shutdown = broadcast::channel::<()>(1).0;
+        let broadcast = broadcast::channel::<SysMessage>(1).0;
         // Internal channel capacity tuned for detection findings (typically lower volume than raw events)
-        let channel = broadcast::channel::<Arc<Vec<Event>>>(64).0;
-
+        let events = broadcast::channel::<Arc<Vec<Event>>>(64).0;
         let server = VectorServer::new();
 
         let mut detections = SigmaCollection::default();
+        let config = Arc::new(ArcSwap::from_pointee(config));
 
-        if let Some(StringOrList::String(path)) = &config.detections {
+        if let Some(StringOrList::String(path)) = &config.load().detections {
             debug!("... loading Sigma detection rules from {}", path);
         } else {
             debug!("... loading detection rules");
         }
         // Support both single directory and multiple directories for detection rules
         // This enables organizing rules by severity, product, or team ownership
-        let count = match &config.detections {
+        let count = match &config.load().detections {
             Some(config::StringOrList::String(path)) => detections
                 .load_from_dir(path)
                 .map_err(|e| anyhow!(e.to_string())),
@@ -101,54 +103,53 @@ impl App {
             detections,
             config,
             server,
-            shutdown,
-            channel,
+            sys: broadcast,
+            events,
         })
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        if let Some(ref storage) = self.config.storage {
+        self.config_watch().await;
+
+        let config = self.config.load();
+        if let Some(_) = self.config.load().storage {
             info!("... initializing Parquet storage handler");
-            self.run_parquet(storage).await?;
+            self.run_parquet().await?;
         }
 
         // Only spawn detection handler if rules are configured
         // Allows running as a pure data pipeline without detection overhead
-        if self.config.detections.is_some() && self.detections.read().await.len() > 0 {
+        if config.detections.is_some() && self.detections.read().await.len() > 0 {
             info!("... initializing detection handler");
             let src = self.server.subscribe().await?;
-            let dest = self.channel.clone();
-            let mut detection_handler = DetectionHandler::new(
-                src,
-                dest,
-                self.detections.clone(),
-                self.shutdown.subscribe(),
-            );
+            let dest = self.events.clone();
+            let mut detection_handler =
+                DetectionHandler::new(src, dest, self.detections.clone(), self.sys.subscribe());
 
             tokio::spawn(async move {
                 detection_handler.run().await;
             });
         }
 
-        if self.config.api.enabled {
+        if config.api.enabled {
             info!("... initializing API server and Vector configuration");
-            let shutdown = self.shutdown.subscribe();
+            let broadcast = self.sys.clone();
             let detections = self.detections.clone();
             let config = self.config.clone();
             tokio::spawn(async move {
-                api::serve(&config, detections, shutdown)
+                api::serve(&config, detections, broadcast)
                     .await
                     .expect("API server failed");
             });
         }
 
-        if let Some(Destination::Vector(ref vector)) = self.config.output {
+        if let Some(Destination::Vector(ref vector)) = config.output {
             info!("... initializing Vector output to {}", vector.cfg.url());
             self.run_vector(vector).await?;
         }
 
-        let shutdown = self.shutdown.subscribe();
-        if let Listener::Vector(ref vector) = self.config.input {
+        let shutdown = self.sys.subscribe();
+        if let Listener::Vector(ref vector) = config.input {
             info!("... listening for Vector events on {}", vector.url());
             self.server.serve(&vector.address(), shutdown).await?;
         }
@@ -156,8 +157,8 @@ impl App {
         Ok(())
     }
 
-    pub fn shutdown(&self) -> broadcast::Sender<()> {
-        self.shutdown.clone()
+    pub fn update_channel(&self) -> broadcast::Sender<SysMessage> {
+        self.sys.clone()
     }
 
     /// Initialize Parquet storage backend with dual subscription model.
@@ -168,15 +169,15 @@ impl App {
     ///
     /// Both streams are written to Parquet, but routed to different files based on class_uid.
     /// This allows querying raw data and detections independently via DuckDB.
-    async fn run_parquet(&self, config: &striem_config::storage::StorageConfig) -> Result<()> {
-        let writer = storage::ParquetBackend::new(&config.schema, &config.path)
-            .expect("Failed to create Parquet backend");
+    async fn run_parquet(&self) -> Result<()> {
+        let writer =
+            storage::ParquetBackend::new(&self.config).expect("Failed to create Parquet backend");
 
-        let rx = self.server.subscribe().await?;
-        let rx_internal = self.channel.subscribe();
-        let shutdown = self.shutdown.subscribe();
+        let server_rx = self.server.subscribe().await?;
+        let event_rx = self.events.subscribe();
+        let shutdown = self.sys.subscribe();
         tokio::spawn(async move {
-            writer.run(rx, rx_internal, shutdown).await;
+            writer.run(server_rx, event_rx, shutdown).await;
         });
         Ok(())
     }
@@ -191,13 +192,13 @@ impl App {
         vector: &striem_config::output::VectorDestinationConfig,
     ) -> Result<()> {
         let url = vector.cfg.url();
-        let rx_internal = self.channel.subscribe();
-        let shutdown = self.shutdown.subscribe();
+        let rx = self.events.subscribe();
+        let shutdown = self.sys.subscribe();
         tokio::spawn(async move {
             // Retry indefinitely with exponential backoff until connection succeeds
             // This is critical for resilience during Vector restarts or network issues
             let mut sink = retry(ExponentialBackoff::default(), || async {
-                VectorClient::new(&url, rx_internal.resubscribe(), shutdown.resubscribe())
+                VectorClient::new(&url, rx.resubscribe(), shutdown.resubscribe())
                     .await
                     .map_err(|e| {
                         warn!("Failed to connect to Vector at {}: {}", url, e);
@@ -211,6 +212,95 @@ impl App {
 
             sink.run().await.expect("Vector client failed");
         });
+        Ok(())
+    }
+
+    async fn config_watch(&self) {
+        let mut rx = self.sys.subscribe();
+        let tx = self.sys.clone();
+        let locked = self.config.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(SysMessage::Shutdown) => {
+                        info!("shutting down config watcher...");
+                        return;
+                    }
+                    Ok(SysMessage::Update(updated)) => {
+                        info!("updating configuration...");
+                        // Apply updates to local config file and in-memory config
+                        let mut current = Self::get_local_config().await;
+                        for (k, v) in updated.iter() {
+                            current.insert(k.clone(), v.clone());
+                        }
+                        if Self::set_local_config(&current)
+                            .await
+                            .inspect_err(|e| {
+                                error!("failed to update config: {}", e);
+                            })
+                            .is_ok()
+                        {
+                            if let Ok(newcfg) = crate::config().await {
+                                locked.store(Arc::new(newcfg));
+                                info!("config updated");
+                                tx.send(SysMessage::Reload)
+                                    .inspect_err(|e| {
+                                        error!("failed to broadcast config reload: {}", e);
+                                    })
+                                    .ok();
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        info!("shutting down config watcher...");
+                        return;
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+        });
+    }
+
+    async fn get_local_config() -> Map<String, Value> {
+        let file = if let Some(dir) = std::env::var_os("STRIEM_APPDATA") {
+            std::path::PathBuf::from(dir).join("striem.json")
+        } else {
+            if let Ok(dir) = std::env::current_dir() {
+                dir.join("striem.json")
+            } else {
+                return Map::new();
+            }
+        };
+
+        tokio::fs::read_to_string(file)
+            .await
+            .map(|data| {
+                serde_json::from_str(&data)
+                    .map(|c: Value| c.as_object().cloned())
+                    .unwrap_or_default()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    }
+
+    async fn set_local_config(updated: &Map<String, Value>) -> Result<()> {
+        let mut file = if let Some(dir) = std::env::var_os("STRIEM_APPDATA") {
+            std::path::PathBuf::from(dir).join("striem.json")
+        } else {
+            if let Ok(dir) = std::env::current_dir() {
+                dir.join("striem.json")
+            } else {
+                return Err(anyhow!("Failed to determine config file path"));
+            }
+        };
+
+        let data = serde_json::to_string_pretty(&Value::Object(updated.clone()))?;
+
+        file.set_extension("tmp");
+        tokio::fs::write(&file, data).await?;
+        tokio::fs::rename(&file, file.with_extension("json")).await?;
         Ok(())
     }
 }

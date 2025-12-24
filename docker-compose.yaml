@@ -19,6 +19,7 @@ services:
       - "8080:8080"
     environment:
       - RUST_LOG=info
+      - STRIEM_APPDATA=/data
       - STRIEM_DB=/data
       - STRIEM_API_ENABLED=1
       - STRIEM_API_ADDRESS=0.0.0.0:8080
