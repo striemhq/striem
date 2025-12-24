@@ -61,17 +61,20 @@ impl<'de> Deserialize<'de> for VectorDestinationConfig {
             helper.cfg.port = DEFAULT_VECTOR_LISTEN_PORT;
         }
         if let Some(hec) = &mut helper.hec
-            && hec.port == 0 {
-                hec.port = DEFAULT_VECTOR_HEC_LISTEN_PORT;
-            }
+            && hec.port == 0
+        {
+            hec.port = DEFAULT_VECTOR_HEC_LISTEN_PORT;
+        }
         if let Some(http) = &mut helper.http
-            && http.port == 0 {
-                http.port = DEFAULT_VECTOR_HTTP_LISTEN_PORT;
-            }
+            && http.port == 0
+        {
+            http.port = DEFAULT_VECTOR_HTTP_LISTEN_PORT;
+        }
         if let Some(api) = &mut helper.api
-            && api.port == 0 {
-                api.port = DEFAULT_VECTOR_API_LISTEN_PORT;
-            }
+            && api.port == 0
+        {
+            api.port = DEFAULT_VECTOR_API_LISTEN_PORT;
+        }
         Ok(VectorDestinationConfig {
             cfg: helper.cfg,
             hec: helper.hec,

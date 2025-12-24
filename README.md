@@ -18,6 +18,9 @@ StrIEM is an open-source Security Information and Event Management (SIEM) platfo
 - **Management UI**: Web interface for managing sources, viewing alerts, and querying data
 - **Multi-Source Support**: AWS CloudTrail, Okta, GitHub, Google Cloud, and more
 - **Extensible Architecture**: Easily add new data sources and custom OCSF remaps
+- **MCP Integration**: Trigger alert actions using Model Context Protocol (MCP) tools
+
+*Please file Github issues for feature requests*
 
 ## Architecture
 

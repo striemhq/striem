@@ -5,7 +5,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path};
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::ApiState;
 
@@ -29,6 +29,8 @@ async fn get_alerts(
     State(state): State<ApiState>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<axum::Json<Vec<Alert>>, (axum::http::StatusCode, String)> {
+    let config = state.config.load();
+
     let start = params
         .get("start")
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
@@ -48,10 +50,12 @@ async fn get_alerts(
         return Ok(axum::Json(Vec::new()));
     };
 
-    let basepath = if let Some(path) = &state.data {
-        path::Path::new(path)
-    } else {
-        return Ok(axum::Json(Vec::new()));
+    let basepath = {
+        if let Some(path) = config.storage.as_ref().and_then(|s| Some(s.path.clone())) {
+            path.clone()
+        } else {
+            return Ok(axum::Json(Vec::new()));
+        }
     };
 
     let findings_path = basepath.join("findings/detection_finding");
@@ -87,10 +91,10 @@ async fn get_alerts(
         .query_map(duckdb::params![start, end], |row| {
             let fname = &row.get::<_, String>(5)?;
 
-            let fname = path::Path::new(&fname)
-                .strip_prefix(basepath)
-                .unwrap_or_else(|_| path::Path::new(&fname))
-                .to_string_lossy();
+            let fname = PathBuf::from(&fname)
+                .strip_prefix(&basepath)
+                .and_then(|p| Ok(p.to_path_buf()))
+                .unwrap_or_else(|_| PathBuf::from(&fname));
 
             Ok(Alert {
                 id: row.get(0)?,
@@ -98,7 +102,10 @@ async fn get_alerts(
                 title: row.get(2)?,
                 severity: row.get(3)?,
                 extra: HashMap::from([
-                    ("_file".to_string(), serde_json::Value::from(fname)),
+                    (
+                        "_file".to_string(),
+                        serde_json::Value::from(fname.to_string_lossy()),
+                    ),
                     (
                         "observables".to_string(),
                         serde_json::Value::from(row.get::<_, Option<String>>(4)?),
@@ -130,15 +137,18 @@ pub(crate) async fn fetch_alert(
 ) -> Result<serde_json::Value> {
     let mut sql = r#"SELECT row_to_json(t) from (SELECT * "#.to_string();
 
+    let config = state.config.load();
+
     if let Some(file) = fname
         && file.trim() != ""
     {
         sql = format!(
             "{} FROM read_parquet(\"{}/{}\")",
             sql,
-            state
-                .data
+            config
+                .storage
                 .as_ref()
+                .map(|s| s.path.to_string_lossy().to_string())
                 .ok_or_else(|| anyhow!("data path not set"))?,
             file.trim()
         );
@@ -146,9 +156,10 @@ pub(crate) async fn fetch_alert(
         sql = format!(
             "{} FROM read_parquet(\"{}/findings/detection_finding/**/*.parquet\")",
             sql,
-            state
-                .data
+            config
+                .storage
                 .as_ref()
+                .map(|s| s.path.to_string_lossy().to_string())
                 .ok_or_else(|| anyhow!("data path not set"))?
         );
     }

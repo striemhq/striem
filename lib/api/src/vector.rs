@@ -11,6 +11,8 @@ async fn get_vector_config(
         log_namespace = true
     };
 
+    let striemconfig = state.config.load();
+
     let mut transforms = toml::Table::new();
 
     let mut sources = toml! {
@@ -21,10 +23,10 @@ async fn get_vector_config(
         framing = { method = "newline_delimited" }
     };
 
-    let fqdn = state
-        .config
-        .fqdn.clone()
-        .unwrap_or_else(|| state.config.input.url());
+    let fqdn = striemconfig
+        .fqdn
+        .clone()
+        .unwrap_or_else(|| striemconfig.input.url());
 
     let mut sinks = toml! {
         [sink-striem]
@@ -33,7 +35,7 @@ async fn get_vector_config(
         address = fqdn
     };
 
-    if let Some(Destination::Vector(ref cfg)) = state.config.output {
+    if let Some(Destination::Vector(ref cfg)) = striemconfig.output {
         if let Some(api) = &cfg.api {
             let api_address = api.address().to_string();
             let api_config = toml! {
@@ -102,9 +104,13 @@ async fn get_vector_config(
     SOURCES.read().await.iter().for_each(|source| {
         Table::try_from(source)
             .map(|t| {
-                if let Some(s) = t.get("sources").and_then(|s| s.as_table()) { sources.extend(s.clone()); }
+                if let Some(s) = t.get("sources").and_then(|s| s.as_table()) {
+                    sources.extend(s.clone());
+                }
 
-                if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) { transforms.extend(t.clone()); }
+                if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) {
+                    transforms.extend(t.clone());
+                }
             })
             .ok();
     });

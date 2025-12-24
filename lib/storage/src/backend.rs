@@ -10,15 +10,21 @@
 use super::writer::Writer;
 use super::{ocsf, util::visit_dirs};
 use anyhow::{Result, anyhow};
+use arc_swap::ArcSwap;
 use log::{debug, error, info};
 use parquet::arrow::parquet_to_arrow_schema;
 use serde_json::Value;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::path::PathBuf;
+use std::{collections::HashMap, sync::Arc};
+use striem_common::SysMessage;
 use striem_common::event::Event;
+use striem_config::StrIEMConfig;
 
 /// Backend managing multiple Parquet writers, one per OCSF class.
 /// Writers are selected at runtime based on event's class_uid field.
 pub struct ParquetBackend {
+    config: Arc<ArcSwap<StrIEMConfig>>,
+    path: Arc<ArcSwap<PathBuf>>,
     pub heap: HashMap<ocsf::Class, Writer>,
 }
 
@@ -41,14 +47,23 @@ impl ParquetBackend {
     ///
     /// This structure is optimized for DuckDB's glob patterns:
     /// `SELECT * FROM './storage/iam/**/*.parquet'`
-    pub fn new(schema: &String, out: &String) -> Result<Self> {
-        let dir = Path::new(&schema);
+    pub fn new(config: &Arc<ArcSwap<StrIEMConfig>>) -> Result<Self> {
+        let (path, schemapath) = config
+            .load()
+            .storage
+            .as_ref()
+            .map(|c| (c.path.clone(), c.schema.clone()))
+            .ok_or_else(|| anyhow!("storage path not set"))?;
+
+        let path = Arc::new(ArcSwap::from_pointee(path));
+
         let mut heap = HashMap::new();
-        for (s, path) in visit_dirs(dir).map_err(|e| anyhow!(e.to_string()))? {
+
+        for (schema, filepath) in visit_dirs(&schemapath)? {
             // Convert Parquet schema to Arrow schema and enrich with metadata
             // Metadata is preserved in Parquet files for debugging and lineage tracking
-            let arrow_schema = Arc::new(parquet_to_arrow_schema(&s, None)?.with_metadata(
-                HashMap::from([
+            let arrow_schema = Arc::new(
+                parquet_to_arrow_schema(&schema, None)?.with_metadata(HashMap::from([
                     (
                         "created_by".to_string(),
                         format!(
@@ -57,26 +72,33 @@ impl ParquetBackend {
                             env!("CARGO_GIT_SHA")
                         ),
                     ),
-                    ("description".to_string(), s.name().to_string()),
+                    ("description".to_string(), schema.name().to_string()),
                     (
                         "schema_file".to_string(),
-                        path.trim_start_matches(&format!("/{}", schema)).to_string(),
+                        filepath
+                            .strip_prefix(&schemapath)?
+                            .to_string_lossy()
+                            .to_string(),
                     ),
-                ]),
-            ));
+                ])),
+            );
 
             // Derive category from class_uid using OCSF's numeric scheme:
             // class_uid 3002 -> category 3 (IAM), class 2 (Authentication)
-            let class: ocsf::Class = s.name().parse().map_err(|e: String| anyhow!(e))?;
+            let class: ocsf::Class = schema.name().parse().map_err(|e: String| anyhow!(e))?;
             let category = ocsf::Category::try_from((class as u32 % 10000) / 1000)?;
-            let outpath = format!("{}/{}/{}", out, category.to_string(), class.to_string());
 
-            let writer = Writer::new(outpath, arrow_schema)?;
+            let subpath = PathBuf::from(category.to_string()).join(class.to_string());
+            let writer = Writer::new(path.clone(), subpath, arrow_schema)?;
 
             heap.insert(class, writer);
         }
 
-        Ok(Self { heap })
+        Ok(Self {
+            heap,
+            path,
+            config: config.clone(),
+        })
     }
 
     /// Route and write a JSON event to the appropriate Parquet writer.
@@ -125,13 +147,13 @@ impl ParquetBackend {
         mut self,
         mut upstream_rx: tokio::sync::broadcast::Receiver<Arc<Vec<Event>>>,
         mut internal_rx: tokio::sync::broadcast::Receiver<Arc<Vec<Event>>>,
-        mut shutdown: tokio::sync::broadcast::Receiver<()>,
+        mut sys: tokio::sync::broadcast::Receiver<SysMessage>,
     ) {
         // Start rotation timers for all writers before processing events
         for w in self.heap.values_mut() {
             w.run().await.expect("Failed to start writer");
         }
-
+        let config = self.config.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -152,9 +174,31 @@ impl ParquetBackend {
                             break;
                         }
                     },
-                    _ = shutdown.recv() => {
-                        info!("shutting down Parquet writer...");
-                        return;
+                    msg = sys.recv() => {
+                        match msg {
+                            Ok(SysMessage::Shutdown) => {
+                            info!("shutting down Parquet writer...");
+                            return;
+                            }
+                            Ok(SysMessage::Reload) => {
+                                info!("reloading Parquet writer config...");
+                                if let Ok(path) = config.load().storage.as_ref()
+                                .map(|c| c.path.clone())
+                                .ok_or_else(|| anyhow!("storage path not set")) {
+                                    self.path.store(Arc::new(path));
+                                    // Schema reload not implemented yet
+                                    info!("Parquet writer config reloaded");
+                                } else {
+                                    error!("failed to reload Parquet writer config");
+                                    return;
+                                }
+                            }
+                            Err(_) => {
+                                info!("Shutdown channel closed, exiting ParquetBackend...");
+                                return;
+                            }
+                            _ => continue,
+                        }
                     }
                 };
             }

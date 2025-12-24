@@ -8,7 +8,10 @@
 //! Environment variables override file settings, enabling Docker/K8s deployments
 //! without rebuilding config files.
 
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    path::PathBuf,
+};
 use url::Url;
 
 use anyhow::{Result, anyhow};
@@ -138,8 +141,8 @@ impl HostConfig {
     }
 }
 
-const CWD: fn() -> String = || {
-    std::env::current_dir().map(|p| p.to_string_lossy().into())
+const CWD: fn() -> PathBuf = || {
+    std::env::current_dir()
         .unwrap_or_else(|e| panic!("Failed to get current working directory: {}", e))
 };
 
@@ -148,7 +151,7 @@ struct StrIEMConfigOptions {
     /// Path to the StrIEM source configuration & rule database
     /// (defaults to current working directory)
     #[serde(default = "CWD")]
-    db: String,
+    db: PathBuf,
 
     /// Location of top-level Sigma detection directory
     /// (can be a list or single path)
@@ -175,7 +178,7 @@ struct StrIEMConfigOptions {
 
 #[derive(Debug, Clone)]
 pub struct StrIEMConfig {
-    pub db: Option<String>,
+    pub db: Option<PathBuf>,
 
     pub detections: Option<StringOrList>,
 
@@ -232,6 +235,30 @@ impl StrIEMConfig {
             .build()?;
 
         let config: StrIEMConfigOptions = builder.try_deserialize()?;
+        Self::check(&config)?;
+
+        Ok(config.into())
+    }
+
+    pub fn from_multi_file(files: Vec<PathBuf>) -> Result<Self> {
+        let mut builder = Config::builder().add_source(config::File::from_str(
+            serde_json::to_string(&StrIEMConfigOptions::default())?.as_str(),
+            config::FileFormat::Json,
+        ));
+
+        builder = builder.add_source(config::Environment::with_prefix("STRIEM").separator("_"));
+
+        for file in files {
+            if let Some(filename) = file.to_str() {
+                builder = builder.add_source(config::File::with_name(filename));
+            } else {
+                log::error!("Invalid config file path: {:?}", file);
+            }
+        }
+
+        let built = builder.build()?;
+
+        let config: StrIEMConfigOptions = built.try_deserialize()?;
         Self::check(&config)?;
 
         Ok(config.into())

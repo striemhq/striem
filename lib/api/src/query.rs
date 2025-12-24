@@ -41,9 +41,15 @@ async fn post_query(
         return Err(INTERNAL_SERVER_ERROR());
     };
 
+    let data = state
+        .config
+        .load()
+        .storage
+        .as_ref()
+        .and_then(|s| Some(s.path.as_path().to_str().map(|s| s.to_string())?));
     conn.execute(
         "SET file_search_path = ?",
-        duckdb::params![state.data.as_deref().unwrap_or("")],
+        duckdb::params![data.as_deref().unwrap_or("")],
     )
     .map_err(|e| {
         error!("Database Error: {}", e);

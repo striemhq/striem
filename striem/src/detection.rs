@@ -15,7 +15,7 @@ use anyhow::Result;
 use log::{error, info, trace};
 use serde_json::{Value, json};
 use sigmars::SigmaCollection;
-use striem_common::event::Event;
+use striem_common::{SysMessage, event::Event};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -26,7 +26,7 @@ pub(crate) struct DetectionHandler {
     src: broadcast::Receiver<Arc<Vec<Event>>>,
     dest: broadcast::Sender<Arc<Vec<Event>>>,
     rules: Arc<RwLock<SigmaCollection>>,
-    shutdown: broadcast::Receiver<()>,
+    shutdown: broadcast::Receiver<SysMessage>,
 }
 
 impl DetectionHandler {
@@ -34,7 +34,7 @@ impl DetectionHandler {
         src: broadcast::Receiver<Arc<Vec<Event>>>,
         dest: broadcast::Sender<Arc<Vec<Event>>>,
         rules: Arc<RwLock<SigmaCollection>>,
-        shutdown: broadcast::Receiver<()>,
+        shutdown: broadcast::Receiver<SysMessage>,
     ) -> Self {
         Self {
             src,
@@ -52,9 +52,14 @@ impl DetectionHandler {
     pub(crate) async fn run(&mut self) {
         loop {
             tokio::select! {
-                _ = self.shutdown.recv() => {
-                    info!("Detection worker shutting down...");
-                    return;
+                msg = self.shutdown.recv() => {
+                    if let Ok(SysMessage::Shutdown) = msg {
+                            info!("Detection worker shutting down...");
+                            return;
+                    } else if msg.is_err() {
+                        info!("Shutdown channel closed, exiting detection worker...");
+                        return;
+                    }
                 },
                 result = self.src.recv() => {
                     if let Ok(events) = result {

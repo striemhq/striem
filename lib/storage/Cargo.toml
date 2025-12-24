@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 striem_common = {"path" = "../common"}
+striem_config = {"path" = "../config"}
 anyhow.workspace = true
 arc-swap.workspace = true
 arrow.workspace = true
