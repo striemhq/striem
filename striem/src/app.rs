@@ -21,7 +21,7 @@ use log::{debug, error, info, warn};
 use serde_json::{Map, Value};
 use tokio::sync::{RwLock, broadcast};
 
-use sigmars::{MemBackend, SigmaCollection};
+use sigmars::SigmaCollection;
 
 use striem_common::{SysMessage, event::Event};
 use striem_config::{
@@ -93,9 +93,9 @@ impl App {
 
         // MemBackend is required by sigmars for rule compilation and indexing
         // Rules are pre-compiled at startup to avoid runtime compilation overhead
-        let mut backend = MemBackend::new().await;
-        detections.init(&mut backend).await;
-
+        //let mut backend = MemBackend::new().await;
+        //detections.init(&mut backend).await;
+        detections.with_backend()?;
         let detections = Arc::new(RwLock::new(detections));
 
         info!("... loaded {} Sigma detections", count);
@@ -112,7 +112,7 @@ impl App {
         self.config_watch().await;
 
         let config = self.config.load();
-        if let Some(_) = self.config.load().storage {
+        if self.config.load().storage.is_some() {
             info!("... initializing Parquet storage handler");
             self.run_parquet().await?;
         }
@@ -239,8 +239,7 @@ impl App {
                                 error!("failed to update config: {}", e);
                             })
                             .is_ok()
-                        {
-                            if let Ok(newcfg) = crate::config().await {
+                            && let Ok(newcfg) = crate::config().await {
                                 locked.store(Arc::new(newcfg));
                                 info!("config updated");
                                 tx.send(SysMessage::Reload)
@@ -249,7 +248,6 @@ impl App {
                                     })
                                     .ok();
                             }
-                        }
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("shutting down config watcher...");
@@ -266,12 +264,10 @@ impl App {
     async fn get_local_config() -> Map<String, Value> {
         let file = if let Some(dir) = std::env::var_os("STRIEM_APPDATA") {
             std::path::PathBuf::from(dir).join("striem.json")
+        } else if let Ok(dir) = std::env::current_dir() {
+            dir.join("striem.json")
         } else {
-            if let Ok(dir) = std::env::current_dir() {
-                dir.join("striem.json")
-            } else {
-                return Map::new();
-            }
+            return Map::new();
         };
 
         tokio::fs::read_to_string(file)
@@ -288,12 +284,10 @@ impl App {
     async fn set_local_config(updated: &Map<String, Value>) -> Result<()> {
         let mut file = if let Some(dir) = std::env::var_os("STRIEM_APPDATA") {
             std::path::PathBuf::from(dir).join("striem.json")
+        } else if let Ok(dir) = std::env::current_dir() {
+            dir.join("striem.json")
         } else {
-            if let Ok(dir) = std::env::current_dir() {
-                dir.join("striem.json")
-            } else {
-                return Err(anyhow!("Failed to determine config file path"));
-            }
+            return Err(anyhow!("Failed to determine config file path"));
         };
 
         let data = serde_json::to_string_pretty(&Value::Object(updated.clone()))?;

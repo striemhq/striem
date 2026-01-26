@@ -36,10 +36,10 @@ async fn list_rules(
                         Some(serde_json::json!({
                             "id": obj.get("id")?,
                             "title": obj.get("title")?,
-                            "description": obj.get("description")?,
+                            "description": obj.get("description"),
                             "enabled": obj.get("enabled")?.as_bool().unwrap_or(true),
-                            "level": obj.get("level")?,
-                            "logsource": obj.get("logsource")?,
+                            "level": obj.get("level"),
+                            "logsource": obj.get("logsource"),
                         }))
                     })
                 })

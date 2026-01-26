@@ -46,7 +46,7 @@ async fn post_query(
         .load()
         .storage
         .as_ref()
-        .and_then(|s| Some(s.path.as_path().to_str().map(|s| s.to_string())?));
+        .and_then(|s| s.path.as_path().to_str().map(|s| s.to_string()));
     conn.execute(
         "SET file_search_path = ?",
         duckdb::params![data.as_deref().unwrap_or("")],

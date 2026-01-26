@@ -47,18 +47,19 @@ fn main() {
     let mut output = String::from("// Auto-generated OCSF classes & categories\n\n");
     output.push_str("use num_enum::TryFromPrimitive;\n\n");
 
+    let re = Regex::new(r"[^a-zA-Z]").unwrap();
     // Generate Category enum
     output.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive)]\n");
     output.push_str("#[repr(u32)]\n");
     output.push_str("pub enum Category {\n");
     output.push_str("    Other = 0,\n");
     if let Some(attrs) = categories["attributes"].as_object() {
+        
         for (_, cat) in attrs {
             let caption = cat["caption"].as_str().unwrap();
             let uid = cat["uid"].as_u64().unwrap();
             let enum_name = caption.replace(" ", "");
-            let enum_name = Regex::new(r"[^a-zA-Z]")
-                .unwrap()
+            let enum_name = re
                 .replace_all(&enum_name, "")
                 .to_string();
             output.push_str(&format!("    {} = {},\n", enum_name, uid));
@@ -75,8 +76,7 @@ fn main() {
         for (cat_name, cat) in attrs {
             let caption = cat["caption"].as_str().unwrap();
             let enum_name = caption.replace(" ", "");
-            let enum_name = Regex::new(r"[^a-zA-Z]")
-                .unwrap()
+            let enum_name = re
                 .replace_all(&enum_name, "")
                 .to_string();
             output.push_str(&format!(
@@ -106,8 +106,7 @@ fn main() {
                         let event_caption = event["caption"].as_str().unwrap();
                         if let Some(event_uid) = event["uid"].as_u64() {
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
                             let combined_uid = cat_uid * 1000 + event_uid;
@@ -138,8 +137,7 @@ fn main() {
                         let event_caption = event["caption"].as_str().unwrap();
                         if let Some(event_uid) = event["uid"].as_u64() {
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
                             let combined_uid = 200 * 1000 + cat_uid * 1000 + event_uid;
@@ -175,8 +173,7 @@ fn main() {
                             let event_caption = event["caption"].as_str().unwrap();
                             let event_name = event["name"].as_str().unwrap();
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
 
@@ -204,8 +201,7 @@ fn main() {
                             let event_caption = event["caption"].as_str().unwrap();
                             let event_name = event["name"].as_str().unwrap();
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
 
@@ -241,8 +237,7 @@ fn main() {
                             let event_caption = event["caption"].as_str().unwrap();
                             let event_name = event["name"].as_str().unwrap();
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
 
@@ -270,8 +265,7 @@ fn main() {
                             let event_caption = event["caption"].as_str().unwrap();
                             let event_name = event["name"].as_str().unwrap();
                             let event_enum_name = event_caption.replace(" ", "");
-                            let event_enum_name = Regex::new(r"[^a-zA-Z]")
-                                .unwrap()
+                            let event_enum_name = re
                                 .replace_all(&event_enum_name, "")
                                 .to_string();
 

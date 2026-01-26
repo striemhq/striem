@@ -8,7 +8,7 @@ mod query;
 mod routes;
 mod server;
 mod sinks;
-mod sources;
+pub(crate) mod sources;
 mod vector;
 
 use arc_swap::ArcSwap;

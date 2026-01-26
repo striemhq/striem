@@ -98,6 +98,13 @@ async fn get_vector_config(
                 codec = "vrl"
                 vrl = {"source" = vrl}
             });
+            transforms.extend(
+                toml! {
+                    [http_route]
+                    type = "exclusive_route"
+                    inputs = ["source-http"]
+                    routes = []
+                });
         }
     }
 
@@ -110,6 +117,23 @@ async fn get_vector_config(
 
                 if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) {
                     transforms.extend(t.clone());
+                }
+
+                if let super::sources::SourceType::Http = source.sourcetype() {
+                    let _ = transforms.get_mut("http_route")
+                    .and_then(|tr| { tr.as_table_mut()})
+                    .and_then(|tr| {
+                        tr.get_mut("routes")
+                        .and_then(|r| r.as_array_mut())
+                    })
+                    .map(|r| {
+                        let condition = format!("%http_server.path == \"/{}\"", source.id());
+                        let name = source.id();
+                        r.push(toml! {
+                            name = name
+                            condition = condition
+                        }.into());
+                    });
                 }
             })
             .ok();

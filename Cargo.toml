@@ -1,11 +1,20 @@
 [workspace]
 resolver = "3"
-
 default-members = ["striem"]
-
 members = [
   "striem",
   "lib/*"]
+
+[workspace.package]
+name = "StrIEM"
+version = "0.1.0"
+edition = "2024"
+license = "MPLv2"
+repository = "https://github.com/striemhq/striem"
+readme = "README.md"
+keywords = ["sigma", "detection", "security", "secops", "siem"]
+category = ["security"]
+description = "an open-source SIEM powered by Vector"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -38,7 +47,7 @@ rusqlite = "0.37"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-sigmars = { git = "https://github.com/crowdalert/sigmars.git", branch = "taxonomy" }
+sigmars = { git = "https://github.com/sonnens/sigmars", branch = "tsink" }
 tempfile = "3"
 tokio = { version = "1.41", features = ["full"] }
 tokio-stream = "0.1"

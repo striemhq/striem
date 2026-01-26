@@ -1,8 +1,27 @@
-use axum::{Json, extract::State, routing::post};
+use axum::{Json, extract::State, routing::get};
 use serde_json::{Map, Value, json};
 use std::path::PathBuf;
 
 use crate::ApiState;
+
+async fn get_destination(
+    State(state): State<ApiState>,
+) -> Result<axum::Json<Value>, (axum::http::StatusCode, String)> {
+    let storage = state
+        .config
+        .load()
+        .storage
+        .as_ref()
+        .and_then(|s| serde_json::to_value(s).ok())
+        .ok_or_else(|| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "no storage configuration found".to_string(),
+            )
+        })?;
+
+    Ok(axum::Json(storage))
+}
 
 async fn set_destination(
     State(state): State<ApiState>,
@@ -71,5 +90,6 @@ async fn set_destination(
 }
 
 pub fn create_router() -> axum::Router<ApiState> {
-    axum::Router::new().route("/", post(set_destination))
+    axum::Router::new().route("/", get(get_destination)
+                                                       .post(set_destination))
 }

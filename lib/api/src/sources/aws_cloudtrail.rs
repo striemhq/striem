@@ -122,8 +122,8 @@ impl Source for AwsCloudtrail {
     }
 
     fn preprocess_transforms(&self) -> Option<(BTreeMap<String, Transform>, String)> {
-        let source_id = format!("source-{}_{}", self.sourcetype().to_string(), self.id());
-        let pre_id = format!("pre-{}_{}", self.sourcetype().to_string(), self.id());
+        let source_id = format!("source-{}_{}", self.sourcetype(), self.id());
+        let pre_id = format!("pre-{}_{}", self.sourcetype(), self.id());
 
         let transforms = BTreeMap::from([(
             pre_id.clone(),
