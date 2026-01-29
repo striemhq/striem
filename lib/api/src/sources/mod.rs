@@ -122,7 +122,7 @@ impl TryInto<Box<dyn Source>> for ExistingSource {
                 id,
                 config: serde_json::from_value(config).map_err(|e| anyhow::anyhow!(e))?,
             })),
-            "http" => Ok(Box::new(http::HttpRoute {
+            "http" | "http_server" => Ok(Box::new(http::HttpRoute {
                 id,
                 config: serde_json::from_value(config).map_err(|e| anyhow::anyhow!(e))?,
             })),
@@ -300,16 +300,15 @@ async fn add_source(
                 .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
             Box::new(okta::Okta { id, config: cfg })
         }
-        _ => {
-            return Err((
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Unsupported source type: {}", sourcetype),
-            ))
+        SourceType::Http => {
+            let cfg = serde_json::from_value(config)
+                .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+            Box::new(http::HttpRoute { id, config: cfg })
         }
     };
 
     let sourcetype = source.sourcetype();
-    let id = source.id();
+    let source_id = source.id();
 
     if let Some(db) = state.db.as_ref() {
         let mut conn = db
@@ -323,7 +322,20 @@ async fn add_source(
 
     sources.push(source);
 
-    Ok(axum::Json(json!({ id: sourcetype })))
+    let sourcetype_value = serde_json::to_value(&sourcetype)
+        .unwrap_or_else(|_| serde_json::Value::Null);
+
+    let ingest_path = if matches!(sourcetype, SourceType::Http) {
+        Some(format!("/{}", source_id))
+    } else {
+        None
+    };
+
+    Ok(axum::Json(json!({
+        "id": source_id,
+        "sourcetype": sourcetype_value,
+        "ingest_path": ingest_path,
+    })))
 }
 
 pub fn create_router() -> axum::Router<ApiState> {
