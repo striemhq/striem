@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
 pub(crate) async fn config() -> Result<StrIEMConfig> {
     let mut cfgfiles = std::env::args()
         .skip(1)
-        .map(|arg| path::PathBuf::from(arg))
+        .map(path::PathBuf::from)
         .collect::<Vec<_>>();
 
     if let Some(dir) = std::env::var_os("STRIEM_APPDATA") {

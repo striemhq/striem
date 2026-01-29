@@ -20,7 +20,7 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Fetch feature flags from API on initial page load
-    fetch("/api/1/detections")
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/health`)
       .then((response) => {
         const featureHeader = response.headers.get("X-Feature-Flag");
         if (featureHeader) {

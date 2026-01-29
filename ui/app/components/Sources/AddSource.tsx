@@ -39,6 +39,16 @@ interface OktaConfig {
   type?: string;
 }
 
+interface HttpSourceConfig {
+  name: string;
+  vrl: string;
+  logsource: {
+    vendor: string;
+    product: string;
+    service: string;
+  };
+}
+
 const sourceTypes: SourceType[] = [
   {
     id: "aws_cloudtrail",
@@ -49,6 +59,11 @@ const sourceTypes: SourceType[] = [
     id: "okta",
     name: "Okta",
     description: "Ingest logs from Okta system logs API"
+  },
+  {
+    id: "http",
+    name: "HTTP",
+    description: "Accept JSON over HTTP with a custom VRL parser"
   }
 ];
 
@@ -80,6 +95,16 @@ export default function AddSource({ isOpen, onClose, onSourceAdded }: AddSourceM
     type: 'okta_system_log'
   });
 
+  const [httpConfig, setHttpConfig] = useState<HttpSourceConfig>({
+    name: '',
+    vrl: '',
+    logsource: {
+      vendor: '',
+      product: '',
+      service: ''
+    }
+  });
+
   const resetModal = () => {
     setStep('select');
     setSelectedSourceType('');
@@ -102,6 +127,15 @@ export default function AddSource({ isOpen, onClose, onSourceAdded }: AddSourceM
       domain: '',
       token: '',
       type: 'okta_system_log'
+    });
+    setHttpConfig({
+      name: '',
+      vrl: '',
+      logsource: {
+        vendor: '',
+        product: '',
+        service: ''
+      }
     });
   };
 
@@ -144,6 +178,21 @@ export default function AddSource({ isOpen, onClose, onSourceAdded }: AddSourceM
         }
         config = oktaConfig;
         endpoint = `${process.env.NEXT_PUBLIC_API_URL}/sources/okta`;
+      } else if (selectedSourceType === 'http') {
+        if (!httpConfig.vrl.trim()) {
+          throw new Error('VRL script is required');
+        }
+
+        const filteredLogsource = Object.fromEntries(
+          Object.entries(httpConfig.logsource).filter(([, value]) => value.trim() !== '')
+        );
+
+        config = {
+          vrl: httpConfig.vrl,
+          logsource: filteredLogsource,
+          ...(httpConfig.name.trim() ? { name: httpConfig.name.trim() } : {})
+        };
+        endpoint = `${process.env.NEXT_PUBLIC_API_URL}/sources/http`;
       } else {
         throw new Error('Invalid source type');
       }
@@ -159,6 +208,17 @@ export default function AddSource({ isOpen, onClose, onSourceAdded }: AddSourceM
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Failed to create source: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      let responseJson: any = null;
+      try {
+        responseJson = await response.json();
+      } catch (jsonErr) {
+        console.warn('Failed to parse source creation response as JSON', jsonErr);
+      }
+
+      if (selectedSourceType === 'http' && responseJson?.ingest_path) {
+        alert(`HTTP source created. Send HTTP requests to: ${responseJson.ingest_path}`);
       }
 
       onSourceAdded();
@@ -377,6 +437,82 @@ export default function AddSource({ isOpen, onClose, onSourceAdded }: AddSourceM
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {step === 'configure' && selectedSourceType === 'http' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">HTTP Source</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="input-label">Display Name (optional)</label>
+                    <input
+                      type="text"
+                      value={httpConfig.name}
+                      onChange={(e) => setHttpConfig({ ...httpConfig, name: e.target.value })}
+                      className="input-base"
+                      placeholder="My custom HTTP source"
+                    />
+                  </div>
+                  <div>
+                    <label className="input-label">VRL Script *</label>
+                    <textarea
+                      value={httpConfig.vrl}
+                      onChange={(e) => setHttpConfig({ ...httpConfig, vrl: e.target.value })}
+                      className="input-base min-h-[160px]"
+                      placeholder="Write a VRL script to transform incoming HTTP payloads"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Sigma Logsource (optional)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="input-label">Vendor</label>
+                    <input
+                      type="text"
+                      value={httpConfig.logsource.vendor}
+                      onChange={(e) => setHttpConfig({
+                        ...httpConfig,
+                        logsource: { ...httpConfig.logsource, vendor: e.target.value }
+                      })}
+                      className="input-base"
+                      placeholder="e.g. custom_vendor"
+                    />
+                  </div>
+                  <div>
+                    <label className="input-label">Product</label>
+                    <input
+                      type="text"
+                      value={httpConfig.logsource.product}
+                      onChange={(e) => setHttpConfig({
+                        ...httpConfig,
+                        logsource: { ...httpConfig.logsource, product: e.target.value }
+                      })}
+                      className="input-base"
+                      placeholder="e.g. webapp"
+                    />
+                  </div>
+                  <div>
+                    <label className="input-label">Service</label>
+                    <input
+                      type="text"
+                      value={httpConfig.logsource.service}
+                      onChange={(e) => setHttpConfig({
+                        ...httpConfig,
+                        logsource: { ...httpConfig.logsource, service: e.target.value }
+                      })}
+                      className="input-base"
+                      placeholder="e.g. auth"
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">Optional Sigma logsource metadata helps downstream detections classify the events.</p>
               </div>
             </div>
           )}

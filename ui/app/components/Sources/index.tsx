@@ -15,6 +15,7 @@ interface SourceConfig {
 const sourceTypeLabels: Record<string, string> = {
   aws_cloudtrail: "AWS CloudTrail",
   okta: "Okta",
+  http: "HTTP",
 };
 
 export default function SourcesTab() {

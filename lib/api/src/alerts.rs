@@ -51,7 +51,7 @@ async fn get_alerts(
     };
 
     let basepath = {
-        if let Some(path) = config.storage.as_ref().and_then(|s| Some(s.path.clone())) {
+        if let Some(path) = config.storage.as_ref().map(|s| s.path.clone()) {
             path.clone()
         } else {
             return Ok(axum::Json(Vec::new()));
@@ -92,8 +92,7 @@ async fn get_alerts(
             let fname = &row.get::<_, String>(5)?;
 
             let fname = PathBuf::from(&fname)
-                .strip_prefix(&basepath)
-                .and_then(|p| Ok(p.to_path_buf()))
+                .strip_prefix(&basepath).map(|p| p.to_path_buf())
                 .unwrap_or_else(|_| PathBuf::from(&fname));
 
             Ok(Alert {
