@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{
-        Array, ArrayData, ArrayRef, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder,
+        Array, ArrayData, ArrayRef, BooleanBuilder, Float64Builder, Float32Builder, Int32Builder, Int64Builder,
         ListArray, StringBuilder, StructArray, TimestampMillisecondBuilder, new_null_array,
     },
     buffer::Buffer,
@@ -147,6 +147,26 @@ fn build_array(value: Option<&Value>, field: &Field) -> Result<ArrayRef> {
                     builder.append_value(f);
                 } else if let Some(n) = v.as_i64() {
                     builder.append_value(n as f64);
+                } else if field.is_nullable() {
+                    eprintln!(
+                        "Warning: expected float for field '{}'; inserting null",
+                        field.name()
+                    );
+                    builder.append_null();
+                } else {
+                    return Err(ArrowError::ParseError(format!(
+                        "Expected float for field '{}'",
+                        field.name()
+                    )));
+                }
+                Ok(Arc::new(builder.finish()))
+            }
+            DataType::Float32 => {
+                let mut builder = Float32Builder::new();
+                if let Some(f) = v.as_f64() {
+                    builder.append_value(f as f32); // XXX check for possible precision loss
+                } else if let Some(n) = v.as_i64() {
+                    builder.append_value(n as f32);
                 } else if field.is_nullable() {
                     eprintln!(
                         "Warning: expected float for field '{}'; inserting null",
