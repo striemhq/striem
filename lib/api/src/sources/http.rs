@@ -45,8 +45,9 @@ impl Source for HttpRoute {
         self.config.logsource.get("service").cloned()
     }
 
-    fn preprocess_transforms(&self) -> Option<(std::collections::BTreeMap<String, super::Transform>, String)> {
-
+    fn preprocess_transforms(
+        &self,
+    ) -> Option<(std::collections::BTreeMap<String, super::Transform>, String)> {
         let transforms = std::collections::BTreeMap::from([(
             format!("ocsf-{}_{}", self.sourcetype(), self.id()),
             super::Transform {

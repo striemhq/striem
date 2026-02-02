@@ -1,6 +1,6 @@
 mod aws_cloudtrail;
-mod okta;
 pub mod http;
+mod okta;
 use std::{collections::BTreeMap, fmt::Display};
 
 use axum::{Router, extract::State};
@@ -22,7 +22,7 @@ pub(crate) static SOURCES: LazyLock<RwLock<Vec<Box<dyn Source>>>> =
 pub enum SourceType {
     AwsCloudtrail,
     Http,
-    Okta
+    Okta,
 }
 
 impl Display for SourceType {
@@ -177,7 +177,7 @@ impl Serialize for dyn Source {
                     }
                 });
                 final_id = format!("http_route.{}", self.id());
-            },
+            }
             _ => {
                 map.serialize_entry(
                     "sources",
@@ -186,27 +186,25 @@ impl Serialize for dyn Source {
                 transforms.insert(
                     ocsf_id.clone(),
                     Transform {
-                    inputs: vec![logsource_id.clone()],
-                    source: None,
-                    file: Some(format!(
-                        "{}/{}/remap.vrl",
-                        remaps_dir,
-                        self.sourcetype()
-                    )),
-                    ..Default::default()
-                });
+                        inputs: vec![logsource_id.clone()],
+                        source: None,
+                        file: Some(format!("{}/{}/remap.vrl", remaps_dir, self.sourcetype())),
+                        ..Default::default()
+                    },
+                );
             }
         }
 
         // adds the Sigma taxonomy metadata, and OCSF remap transform
-        transforms.insert(logsource_id.clone(),
-                Transform {
-                    inputs: vec![final_id.clone()],
-                    source: Some(format!("%source_id = \"{}\"\n{}\n", source_id, sigma)),
-                    file: None,
-                    ..Default::default()
-                },
-            );
+        transforms.insert(
+            logsource_id.clone(),
+            Transform {
+                inputs: vec![final_id.clone()],
+                source: Some(format!("%source_id = \"{}\"\n{}\n", source_id, sigma)),
+                file: None,
+                ..Default::default()
+            },
+        );
 
         map.serialize_entry("transforms", &transforms)?;
 
@@ -322,8 +320,8 @@ async fn add_source(
 
     sources.push(source);
 
-    let sourcetype_value = serde_json::to_value(&sourcetype)
-        .unwrap_or_else(|_| serde_json::Value::Null);
+    let sourcetype_value =
+        serde_json::to_value(&sourcetype).unwrap_or_else(|_| serde_json::Value::Null);
 
     let ingest_path = if matches!(sourcetype, SourceType::Http) {
         Some(format!("/{}", source_id))
@@ -349,7 +347,6 @@ pub fn create_router() -> axum::Router<ApiState> {
         )
 }
 
-
 #[test]
 fn test_source_serialization() {
     use crate::sources::http::{HttpConfig, HttpRoute};
@@ -364,7 +361,6 @@ fn test_source_serialization() {
             ]),
             vrl: "some vrl".to_string(),
         },
-
     }) as Box<dyn Source>;
 
     let serialized = toml::to_string_pretty(&http_source).unwrap();

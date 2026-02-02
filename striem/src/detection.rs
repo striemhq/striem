@@ -121,8 +121,8 @@ impl DetectionHandler {
         let rules = self.rules.read().await;
 
         // Get matching rules and convert to OCSF detection_finding events
-        let detections = 
-            rules.matches(&sigma_event)
+        let detections = rules
+            .matches(&sigma_event)
             .map_err(|e| anyhow::anyhow!("error applying rules: {}", e))?
             .iter()
             .filter_map(|d| rules.get(d))

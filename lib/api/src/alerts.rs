@@ -1,13 +1,13 @@
+use crate::ApiState;
 use anyhow::{Result, anyhow};
 use axum::{
     extract::{Path, Query, State},
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use log;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
-use log;
-use crate::ApiState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Alert {
@@ -89,15 +89,17 @@ async fn get_alerts(
 
     let alerts = query
         .query_map(duckdb::params![start, end], |row| {
-            let fname = row.get::<_, String>(5).map(|fname| {
-                PathBuf::from(&fname)
-                    .strip_prefix(&basepath)
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| PathBuf::from(&fname))
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .unwrap_or_default();
+            let fname = row
+                .get::<_, String>(5)
+                .map(|fname| {
+                    PathBuf::from(&fname)
+                        .strip_prefix(&basepath)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| PathBuf::from(&fname))
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_default();
 
             Ok(Alert {
                 id: row.get(0).unwrap_or_default(),
@@ -105,13 +107,12 @@ async fn get_alerts(
                 title: row.get(2).unwrap_or_default(),
                 severity: row.get(3).unwrap_or_default(),
                 extra: HashMap::from([
-                    (
-                        "_file".to_string(),
-                        serde_json::Value::from(fname),
-                    ),
+                    ("_file".to_string(), serde_json::Value::from(fname)),
                     (
                         "observables".to_string(),
-                        serde_json::Value::from(row.get::<_, Option<String>>(4).unwrap_or_default()),
+                        serde_json::Value::from(
+                            row.get::<_, Option<String>>(4).unwrap_or_default(),
+                        ),
                     ),
                 ]),
             })

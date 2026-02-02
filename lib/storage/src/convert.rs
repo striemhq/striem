@@ -15,8 +15,9 @@ use std::sync::Arc;
 
 use arrow::{
     array::{
-        Array, ArrayData, ArrayRef, BooleanBuilder, Float64Builder, Float32Builder, Int32Builder, Int64Builder,
-        ListArray, StringBuilder, StructArray, TimestampMillisecondBuilder, new_null_array,
+        Array, ArrayData, ArrayRef, BooleanBuilder, Float32Builder, Float64Builder, Int32Builder,
+        Int64Builder, ListArray, StringBuilder, StructArray, TimestampMillisecondBuilder,
+        new_null_array,
     },
     buffer::Buffer,
     compute::concat,
