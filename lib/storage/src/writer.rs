@@ -12,6 +12,7 @@
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use arrow::{array::RecordBatch, datatypes::SchemaRef};
+use chrono::Datelike;
 use log::{debug, error, trace};
 use parquet::arrow::{AsyncArrowWriter, arrow_writer::ArrowWriterOptions};
 use parquet::{
@@ -179,7 +180,7 @@ impl Writer {
     ) -> Result<()> {
         let new_writer = Self::create_writer(schema)?;
         let old = inner.swap(Arc::new(new_writer));
-        let dir = base.load().join(path);
+        let dir = base.load().join(path).join(hiverarchy());
         Self::finish(&old, schema, dir).await
     }
 
@@ -250,10 +251,21 @@ impl Drop for Writer {
     fn drop(&mut self) {
         let guard = self.inner.load();
         let schema = self.schema.clone();
-        let dir = self.base.load().join(&self.subpath);
+        let dir = self.base.load().join(&self.subpath).join(hiverarchy());
 
         tokio::spawn(async move {
             Self::finish(&guard, &schema, dir).await.ok();
         });
     }
+}
+
+// generate Hive partition
+fn hiverarchy() -> PathBuf {
+    let datetime = chrono::Local::now();
+    PathBuf::from(format!(
+        "year={}/month={:02}/day={:02}",
+        datetime.year(),
+        datetime.month(),
+        datetime.day()
+    ))
 }
