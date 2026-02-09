@@ -239,15 +239,16 @@ impl App {
                                 error!("failed to update config: {}", e);
                             })
                             .is_ok()
-                            && let Ok(newcfg) = crate::config().await {
-                                locked.store(Arc::new(newcfg));
-                                info!("config updated");
-                                tx.send(SysMessage::Reload)
-                                    .inspect_err(|e| {
-                                        error!("failed to broadcast config reload: {}", e);
-                                    })
-                                    .ok();
-                            }
+                            && let Ok(newcfg) = crate::config().await
+                        {
+                            locked.store(Arc::new(newcfg));
+                            info!("config updated");
+                            tx.send(SysMessage::Reload)
+                                .inspect_err(|e| {
+                                    error!("failed to broadcast config reload: {}", e);
+                                })
+                                .ok();
+                        }
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         info!("shutting down config watcher...");

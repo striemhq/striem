@@ -1,13 +1,13 @@
+use crate::ApiState;
 use anyhow::{Result, anyhow};
 use axum::{
     extract::{Path, Query, State},
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use log;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
-
-use crate::ApiState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Alert {
@@ -67,7 +67,7 @@ async fn get_alerts(
     let mut sql = r#"SELECT metadata.uid,
                               time,
                               finding_info.title,
-                              severity,
+                              severity_id,
                               observables,
                               filename"#
         .to_string();
@@ -89,31 +89,39 @@ async fn get_alerts(
 
     let alerts = query
         .query_map(duckdb::params![start, end], |row| {
-            let fname = &row.get::<_, String>(5)?;
-
-            let fname = PathBuf::from(&fname)
-                .strip_prefix(&basepath).map(|p| p.to_path_buf())
-                .unwrap_or_else(|_| PathBuf::from(&fname));
+            let fname = row
+                .get::<_, String>(5)
+                .map(|fname| {
+                    PathBuf::from(&fname)
+                        .strip_prefix(&basepath)
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|_| PathBuf::from(&fname))
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_default();
 
             Ok(Alert {
-                id: row.get(0)?,
-                time: row.get(1)?,
-                title: row.get(2)?,
-                severity: row.get(3)?,
+                id: row.get(0).unwrap_or_default(),
+                time: row.get(1).unwrap_or_default(),
+                title: row.get(2).unwrap_or_default(),
+                severity: row.get(3).unwrap_or_default(),
                 extra: HashMap::from([
-                    (
-                        "_file".to_string(),
-                        serde_json::Value::from(fname.to_string_lossy()),
-                    ),
+                    ("_file".to_string(), serde_json::Value::from(fname)),
                     (
                         "observables".to_string(),
-                        serde_json::Value::from(row.get::<_, Option<String>>(4)?),
+                        serde_json::Value::from(
+                            row.get::<_, Option<String>>(4).unwrap_or_default(),
+                        ),
                     ),
                 ]),
             })
         })
         .and_then(|r| r.collect::<Result<Vec<_>, _>>())
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            log::error!("Error fetching alerts: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
     Ok(axum::Json(alerts))
 }

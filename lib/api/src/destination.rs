@@ -90,6 +90,5 @@ async fn set_destination(
 }
 
 pub fn create_router() -> axum::Router<ApiState> {
-    axum::Router::new().route("/", get(get_destination)
-                                                       .post(set_destination))
+    axum::Router::new().route("/", get(get_destination).post(set_destination))
 }
