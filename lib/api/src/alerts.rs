@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, Query, State},
     routing::get,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Datelike};
 use log;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
@@ -69,23 +69,46 @@ async fn get_alerts(
                               finding_info.title,
                               severity_id,
                               observables,
-                              filename"#
+                              filename,
+                              CAST(day AS INTEGER) AS _day,
+                              CAST(month AS INTEGER) AS _month,
+                              CAST(year AS INTEGER) AS _year"#
         .to_string();
 
     sql = format!(
-        "{} FROM read_parquet(\"{}\")",
+        "{} FROM read_parquet(\"{}\") WHERE",
         sql,
         findings_path.join("**/*.parquet").to_string_lossy()
     );
 
+    // time range filtering by the Hive columns
     sql = format!(
-        "{} WHERE time >= ? AND time <= ? ORDER BY time DESC LIMIT 10;",
+        "{} (_year >= {} AND _month >= {} AND _day >= {})",
+        sql,
+        start.year(),
+        start.month(),
+        start.day()
+    );
+
+    sql = format!(
+        "{} AND (_year <= {} AND _month <= {} AND _day <= {})",
+        sql,
+        end.year(),
+        end.month(),
+        end.day()
+    );
+
+    sql = format!(
+        "{} AND (time >= ? AND time <= ?) ORDER BY time DESC LIMIT 10;",
         sql
     );
 
     let mut query = db
         .prepare(&sql)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            log::error!("Error preparing query: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
     let alerts = query
         .query_map(duckdb::params![start, end], |row| {
