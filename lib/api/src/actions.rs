@@ -6,6 +6,7 @@ use rmcp::{
     model::CallToolRequestParam, service::ServiceExt, transport::StreamableHttpClientTransport,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::sync::RwLock;
 
 use striem_common::prelude::*;
@@ -69,12 +70,15 @@ impl Mcp {
         let transport = StreamableHttpClientTransport::from_uri(self.url.clone());
 
         let client = ().serve(transport).await?;
-        client
+        let _ = client
             .call_tool(CallToolRequestParam {
                 name: action.id.clone().into(),
-                arguments: Some(params),
+                arguments: Some(json!({"event": params}).as_object().cloned().unwrap_or_default()),
             })
-            .await?;
+            .await
+            .inspect_err(|e| {
+                log::error!("{}", e);
+            });
 
         Ok(())
     }

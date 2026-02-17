@@ -1,0 +1,39 @@
+services:
+
+  mcp:
+    build:
+      context: extra/mcp
+      dockerfile: Dockerfile
+    image: striem/mcp:latest
+    ports:
+      - "6000:6000"
+    volumes:
+      - ./data:/data
+    environment:
+      - LOG_LEVEL=info
+      - STRIEM_MCP_PORT=6000
+      - STRIEM_ACTIONS_PATH=/data/actions
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  setup:
+    extends:
+      file: docker-compose.yaml
+      service: setup
+
+  striem:
+    extends:
+      file: docker-compose.yaml
+      service: striem
+    environment:
+      - STRIEM_API_MCP_URL=http://mcp:6000/mcp
+    depends_on:
+      mcp:
+        condition: service_started
+
+  vector:
+    extends:
+      file: docker-compose.yaml
+      service: vector
