@@ -7,13 +7,13 @@ edition = "2024"
 striem_api = {"path" = "../lib/api"}
 striem_common = {"path" = "../lib/common"}
 striem_config = {"path" = "../lib/config"}
-striem_storage = {"path" = "../lib/storage"}
 striem_vector = {"path" = "../lib/vector"}
 
 anyhow.workspace = true
 arc-swap.workspace = true
 async-trait.workspace = true
 backoff.workspace = true
+chrono.workspace = true
 env_logger.workspace = true
 futures.workspace = true
 futures-util.workspace = true
@@ -24,6 +24,7 @@ serde_yaml.workspace = true
 sigmars.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+uuid.workspace = true
 
 [features]
 default = ["duckdb"]

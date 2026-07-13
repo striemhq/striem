@@ -14,6 +14,7 @@ pub fn create_router() -> Router<ApiState> {
         .nest("/api/1/actions", actions::create_router())
         .nest("/api/1/query", query::create_router())
         .nest("/api/1/destination", crate::destination::create_router())
+        .nest("/api/1/sinks/slack", crate::sinks::slack::create_router())
 }
 
 async fn health() -> StatusCode {

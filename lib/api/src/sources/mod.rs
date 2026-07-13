@@ -47,6 +47,7 @@ pub enum Decoding {
 pub enum TransformType {
     #[default]
     Remap,
+    Filter,
 }
 
 #[derive(Serialize, Default)]
@@ -58,14 +59,16 @@ pub struct ExclusiveRoute {
 #[derive(Serialize, Default)]
 pub struct Transform {
     #[serde(flatten)]
-    _type: TransformType,
-    inputs: Vec<String>,
+    pub transform_type: TransformType,
+    pub inputs: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    file: Option<String>,
+    pub file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    routes: Option<Vec<ExclusiveRoute>>,
+    pub routes: Option<Vec<ExclusiveRoute>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition: Option<String>,
 }
 
 /// A data source in StrIEM is defines it's own Sigma taxonomy
@@ -102,7 +105,7 @@ pub trait Source: Send + Sync {
     /// Vector source configuration
     fn config(&self) -> &dyn es::Serialize;
 
-    fn preprocess_transforms(&self) -> Option<(BTreeMap<String, Transform>, String)> {
+    fn pre(&self) -> Option<(BTreeMap<String, Transform>, String)> {
         None
     }
 }
@@ -156,7 +159,7 @@ impl Serialize for dyn Source {
 
         let mut map = serializer.serialize_map(Some(2))?;
 
-        let (mut transforms, mut final_id) = match self.preprocess_transforms() {
+        let (mut transforms, mut final_id) = match self.pre() {
             Some((transforms, final_id)) => (transforms, final_id),
             None => (BTreeMap::new(), source_id.clone()),
         };

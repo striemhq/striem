@@ -13,7 +13,12 @@ async fn get_vector_config(
 
     let striemconfig = state.config.load();
 
-    let mut transforms = toml::Table::new();
+    let mut transforms = toml! {
+        [alerts]
+        type = "filter"
+        inputs = ["ocsf-*"]
+        condition = ".class_uid == 2004"
+    };
 
     let mut sources = toml! {
         // this ensures the ocsf-* wildcard input always has at least one producer
@@ -141,8 +146,14 @@ async fn get_vector_config(
 
     SINKS.read().await.iter().for_each(|sink| {
         Table::try_from(sink)
-            .map(|s| {
-                sinks.extend(s);
+            .map(|t| {
+                if let Some(s) = t.get("sinks").and_then(|s| s.as_table()) {
+                    sinks.extend(s.clone());
+                }
+
+                if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) {
+                    transforms.extend(t.clone());
+                }
             })
             .ok();
     });

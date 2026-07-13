@@ -7,7 +7,7 @@ mod persist;
 mod query;
 mod routes;
 mod server;
-mod sinks;
+pub(crate) mod sinks;
 pub(crate) mod sources;
 mod vector;
 

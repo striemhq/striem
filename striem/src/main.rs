@@ -11,7 +11,7 @@ use anyhow::Result;
 use striem_common::SysMessage;
 use striem_config::StrIEMConfig;
 mod app;
-mod detection;
+pub(crate) mod detection;
 use app::App;
 use log::info;
 

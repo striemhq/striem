@@ -47,7 +47,7 @@ rusqlite = "0.37"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-sigmars = { git = "https://github.com/sonnens/sigmars", branch = "tsink" }
+sigmars = { path = "/Users/john/Developer/sigmars" }
 tempfile = "3"
 tokio = { version = "1.41", features = ["full"] }
 tokio-stream = "0.1"
