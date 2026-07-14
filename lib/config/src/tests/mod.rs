@@ -8,13 +8,10 @@ fn test_read_config() {
         - /path/to/sigmarules
         - /path/to/more/rules
       input:
-        vector:
-          address: 0.0.0.0:50050
+        address: 0.0.0.0:50050
       output:
-          vector:
-            url: http://127.0.0.1:6000
+        url: http://127.0.0.1:6000
       storage:
-        schema: ocsf/schema
         path: data/ocsf
     "#;
     let config = StrIEMConfig::from_yaml(config).unwrap();
@@ -25,6 +22,11 @@ fn test_read_config() {
             "/path/to/sigmarules".into(),
             "/path/to/more/rules".into()
         ]))
+    );
+    assert_eq!(config.input.address().to_string(), "0.0.0.0:50050");
+    assert_eq!(
+        config.output.map(|o| o.cfg.url()),
+        Some("http://127.0.0.1:6000/".to_string())
     );
 }
 /*

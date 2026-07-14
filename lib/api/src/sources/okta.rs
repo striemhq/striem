@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{Source, SourceType};
+use super::{Logsource, Source, SourceType};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OktaConfig {
@@ -61,11 +61,11 @@ impl Source for Okta {
         &self.config
     }
 
-    fn logsource_vendor(&self) -> Option<String> {
-        Some("okta".to_string())
-    }
-
-    fn logsource_product(&self) -> Option<String> {
-        Some("audit".to_string())
+    fn logsource(&self) -> Logsource {
+        Logsource {
+            vendor: Some("okta".to_string()),
+            product: Some("audit".to_string()),
+            ..Default::default()
+        }
     }
 }

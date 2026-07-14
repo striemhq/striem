@@ -1,21 +1,17 @@
 mod aws_cloudtrail;
 pub mod http;
 mod okta;
-use std::{collections::BTreeMap, fmt::Display};
+use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use axum::{Router, extract::State};
 use erased_serde as es;
-use serde::{Deserialize, Serialize, ser::SerializeMap};
+use serde::{Deserialize, Serialize};
 
 use serde_json::{Value, json};
-use tokio::sync::RwLock;
-
-use std::sync::LazyLock;
 
 use crate::ApiState;
-
-pub(crate) static SOURCES: LazyLock<RwLock<Vec<Box<dyn Source>>>> =
-    LazyLock::new(|| RwLock::new(Vec::new()));
+use crate::graph::{Pipeline, RenderCtx, Transform, component, naming};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -42,72 +38,124 @@ pub enum Decoding {
     Json,
 }
 
-#[derive(Serialize, Clone, Default)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum TransformType {
-    #[default]
-    Remap,
-    Filter,
+/// The Sigma logsource taxonomy for a source, inserted into event metadata so
+/// detection rules can be scoped to the originating product/service.
+#[derive(Default)]
+pub struct Logsource {
+    pub vendor: Option<String>,
+    pub product: Option<String>,
+    pub service: Option<String>,
 }
 
-#[derive(Serialize, Default)]
-pub struct ExclusiveRoute {
-    condition: String,
-    name: String,
+impl Logsource {
+    fn to_map(&self) -> BTreeMap<String, String> {
+        let mut map = BTreeMap::new();
+        if let Some(vendor) = &self.vendor {
+            map.insert("vendor".to_string(), vendor.clone());
+        }
+        if let Some(product) = &self.product {
+            map.insert("product".to_string(), product.clone());
+        }
+        if let Some(service) = &self.service {
+            map.insert("service".to_string(), service.clone());
+        }
+        map
+    }
 }
 
-#[derive(Serialize, Default)]
-pub struct Transform {
-    #[serde(flatten)]
-    pub transform_type: TransformType,
-    pub inputs: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub routes: Option<Vec<ExclusiveRoute>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub condition: Option<String>,
-}
-
-/// A data source in StrIEM is defines it's own Sigma taxonomy
-/// classification, it's Vector `source` configuration, and any
-/// `transform` configurations needed for preprocessing.
+/// A data source defines its own Sigma taxonomy classification, its Vector
+/// `source` configuration, and any `transform`s needed to normalize events
+/// into OCSF.
 ///
-/// It is serialized to a Vector configuration as
-/// source-{sourcetype}_{id} in the `sources` section,
-/// with transforms to insert the Sigma taxonomy (as a metadata field)
-/// and OCSF normalization as logsource-{sourcetype}_{id}
-/// and ocsf-{sourcetype}_{id}
+/// Each source contributes a chain of components whose terminal node is
+/// `ocsf-<type>_<id>` (see [`Source::output`]); [`Source::pipeline`] produces
+/// those components, and the default implementation builds the standard
+/// `source -> [pre ->] logsource -> ocsf` chain.
 pub trait Source: Send + Sync {
     fn id(&self) -> String;
 
-    /// the Vector source type
+    /// The Vector source type.
     fn sourcetype(&self) -> SourceType;
 
-    /// A human friendly name
+    /// A human friendly name.
     fn name(&self) -> String {
         self.sourcetype().to_string()
     }
 
-    /// Sigma taxonomy fields
-    fn logsource_vendor(&self) -> Option<String> {
-        None
-    }
-    fn logsource_product(&self) -> Option<String> {
-        None
-    }
-    fn logsource_service(&self) -> Option<String> {
-        None
+    /// Sigma logsource taxonomy for this source.
+    fn logsource(&self) -> Logsource {
+        Logsource::default()
     }
 
-    /// Vector source configuration
+    /// Vector source configuration.
     fn config(&self) -> &dyn es::Serialize;
 
-    fn pre(&self) -> Option<(BTreeMap<String, Transform>, String)> {
+    /// An optional preprocessing transform inserted between the raw source and
+    /// the logsource-tagging step; the standard pipeline wires its input to the
+    /// source.
+    fn preprocess(&self) -> Option<Transform> {
         None
     }
+
+    /// The node downstream consumers read this source's normalized OCSF events
+    /// from: `ocsf-<type>_<id>`.
+    fn output(&self) -> String {
+        naming::ocsf(self.sourcetype(), &self.id())
+    }
+
+    /// The Vector components this source contributes to the graph.
+    fn pipeline(&self, ctx: &RenderCtx) -> anyhow::Result<Pipeline> {
+        standard_pipeline(self, ctx)
+    }
+}
+
+/// The VRL that tags an event with its logical source id and Sigma logsource.
+fn logsource_meta(source_id: &str, logsource: &Logsource) -> String {
+    let sigma = json!({ "logsource": logsource.to_map() });
+    format!("%source_id = \"{}\"\n%sigma = {}\n", source_id, sigma)
+}
+
+/// Build the standard `source -> [pre ->] logsource -> ocsf` chain used by
+/// every source that ingests through its own Vector source component.
+fn standard_pipeline<S: Source + ?Sized>(
+    src: &S,
+    ctx: &RenderCtx,
+) -> anyhow::Result<Pipeline> {
+    let sourcetype = src.sourcetype();
+    let id = src.id();
+
+    let source_id = naming::source(&sourcetype, &id);
+    let logsource_id = naming::logsource(&sourcetype, &id);
+    let ocsf_id = naming::ocsf(&sourcetype, &id);
+
+    let mut pipeline = Pipeline::default();
+    pipeline
+        .sources
+        .insert(source_id.clone(), component(src.config())?);
+
+    // Optional preprocessing sits between the source and the logsource tag.
+    let tagged_input = match src.preprocess() {
+        Some(pre) => {
+            let pre_id = naming::pre(&sourcetype, &id);
+            pipeline
+                .transforms
+                .insert(pre_id.clone(), pre.with_inputs([source_id.clone()]));
+            pre_id
+        }
+        None => source_id.clone(),
+    };
+
+    pipeline.transforms.insert(
+        logsource_id.clone(),
+        Transform::remap(logsource_meta(&source_id, &src.logsource()))
+            .with_inputs([tagged_input]),
+    );
+    pipeline.transforms.insert(
+        ocsf_id,
+        Transform::remap_file(ctx.remap_file(&sourcetype)).with_inputs([logsource_id]),
+    );
+
+    Ok(pipeline)
 }
 
 pub type ExistingSource = (String, String, serde_json::Value);
@@ -134,89 +182,8 @@ impl TryInto<Box<dyn Source>> for ExistingSource {
     }
 }
 
-impl Serialize for dyn Source {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
-        let source_id = format!("source-{}_{}", self.sourcetype(), self.id());
-        let logsource_id = format!("logsource-{}_{}", self.sourcetype(), self.id());
-        let ocsf_id = format!("ocsf-{}_{}", self.sourcetype(), self.id());
-
-        let mut logsource = BTreeMap::new();
-
-        if let Some(vendor) = self.logsource_vendor() {
-            logsource.insert("vendor".to_string(), vendor);
-        }
-        if let Some(product) = self.logsource_product() {
-            logsource.insert("product".to_string(), product);
-        }
-        if let Some(service) = self.logsource_service() {
-            logsource.insert("service".to_string(), service);
-        }
-
-        let sigma = format!("%sigma = {}", serde_json::json!({"logsource": logsource}));
-
-        let mut map = serializer.serialize_map(Some(2))?;
-
-        let (mut transforms, mut final_id) = match self.pre() {
-            Some((transforms, final_id)) => (transforms, final_id),
-            None => (BTreeMap::new(), source_id.clone()),
-        };
-
-        // This workaround is until Vector supports environment variable interpolation
-        // in HTTP provider configuration
-        let remaps_dir = if let Ok(dir) = std::env::var("STRIEM_REMAPS") {
-            dir
-        } else {
-            "${STRIEM_REMAPS}".to_string()
-        };
-
-        match self.sourcetype() {
-            SourceType::Http => {
-                transforms.iter_mut().for_each(|(_, t)| {
-                    if t.inputs.is_empty() {
-                        t.inputs.push(logsource_id.clone());
-                    }
-                });
-                final_id = format!("http_route.{}", self.id());
-            }
-            _ => {
-                map.serialize_entry(
-                    "sources",
-                    &BTreeMap::from([(source_id.clone(), &self.config())]),
-                )?;
-                transforms.insert(
-                    ocsf_id.clone(),
-                    Transform {
-                        inputs: vec![logsource_id.clone()],
-                        source: None,
-                        file: Some(format!("{}/{}/remap.vrl", remaps_dir, self.sourcetype())),
-                        ..Default::default()
-                    },
-                );
-            }
-        }
-
-        // adds the Sigma taxonomy metadata, and OCSF remap transform
-        transforms.insert(
-            logsource_id.clone(),
-            Transform {
-                inputs: vec![final_id.clone()],
-                source: Some(format!("%source_id = \"{}\"\n{}\n", source_id, sigma)),
-                file: None,
-                ..Default::default()
-            },
-        );
-
-        map.serialize_entry("transforms", &transforms)?;
-
-        map.end()
-    }
-}
-
-async fn list_sources(State(_): State<ApiState>) -> axum::Json<Vec<serde_json::Value>> {
-    let sources = SOURCES.read().await;
+async fn list_sources(State(state): State<ApiState>) -> axum::Json<Vec<serde_json::Value>> {
+    let sources = state.sources.read().await;
 
     axum::Json(
         sources
@@ -233,10 +200,10 @@ async fn list_sources(State(_): State<ApiState>) -> axum::Json<Vec<serde_json::V
 }
 
 async fn get_source(
-    State(_): State<ApiState>,
+    State(state): State<ApiState>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let sources = SOURCES.read().await;
+    let sources = state.sources.read().await;
 
     let source = sources
         .iter()
@@ -248,17 +215,22 @@ async fn get_source(
             )
         })?;
 
-    let source_json = serde_json::to_value(source)
+    let config = serde_json::to_value(source.config())
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(axum::Json(source_json))
+    Ok(axum::Json(json!({
+        "id": source.id(),
+        "sourcetype": source.sourcetype(),
+        "name": source.name(),
+        "config": config,
+    })))
 }
 
 async fn delete_source(
     State(state): State<ApiState>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<axum::Json<()>, (axum::http::StatusCode, String)> {
-    let mut sources = SOURCES.write().await;
+    let mut sources = state.sources.write().await;
 
     let index = sources
         .iter()
@@ -270,13 +242,10 @@ async fn delete_source(
             )
         })?;
 
-    if let Some(db) = state.db.as_ref() {
-        let mut conn = db
-            .get()
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        crate::persist::remove_source(&mut conn, &id)
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    };
+    state
+        .store
+        .remove_source(&id)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     sources.remove(index);
 
@@ -311,15 +280,12 @@ async fn add_source(
     let sourcetype = source.sourcetype();
     let source_id = source.id();
 
-    if let Some(db) = state.db.as_ref() {
-        let mut conn = db
-            .get()
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        crate::persist::add_source(&mut conn, &source)
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    };
+    state
+        .store
+        .add_source(source.as_ref())
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let mut sources = SOURCES.write().await;
+    let mut sources = state.sources.write().await;
 
     sources.push(source);
 
@@ -351,10 +317,10 @@ pub fn create_router() -> axum::Router<ApiState> {
 }
 
 #[test]
-fn test_source_serialization() {
+fn http_pipeline_terminates_at_ocsf_node() {
     use crate::sources::http::{HttpConfig, HttpRoute};
 
-    let http_source = Box::new(HttpRoute {
+    let source = Box::new(HttpRoute {
         id: "test_http".to_string(),
         config: HttpConfig {
             name: Some("Test HTTP Source".to_string()),
@@ -366,8 +332,69 @@ fn test_source_serialization() {
         },
     }) as Box<dyn Source>;
 
-    let serialized = toml::to_string_pretty(&http_source).unwrap();
-    println!("{}", serialized);
+    let ctx = RenderCtx {
+        remaps_dir: "/remaps".to_string(),
+        http_address: Some("0.0.0.0:8080".to_string()),
+    };
+    let pipeline = source.pipeline(&ctx).unwrap();
 
-    // Further assertions can be added here to validate the serialized output
+    // The chain terminates at the promised ocsf-<type>_<id> node...
+    assert_eq!(source.output(), "ocsf-http_server_test_http");
+    assert!(pipeline.transforms.contains_key(&source.output()));
+
+    // ...and all HTTP sources share a single, de-duplicating listener.
+    assert!(pipeline.sources.contains_key(http::HTTP_LISTENER));
+}
+
+#[test]
+fn merged_graph_dedupes_http_listener_and_serializes() {
+    use crate::graph::VectorConfig;
+    use crate::sources::http::{HttpConfig, HttpRoute};
+
+    let ctx = RenderCtx {
+        remaps_dir: "/remaps".to_string(),
+        http_address: Some("0.0.0.0:8080".to_string()),
+    };
+
+    let aws: Box<dyn Source> = (
+        "aws_cloudtrail".to_string(),
+        "aws1".to_string(),
+        json!({ "sqs": { "queue_url": "https://sqs.example/q" } }),
+    )
+        .try_into()
+        .unwrap();
+    let okta: Box<dyn Source> = (
+        "okta".to_string(),
+        "okta1".to_string(),
+        json!({ "domain": "acme.okta.com", "token": "secret" }),
+    )
+        .try_into()
+        .unwrap();
+    let http = |id: &str| {
+        Box::new(HttpRoute {
+            id: id.to_string(),
+            config: HttpConfig {
+                name: None,
+                logsource: BTreeMap::new(),
+                vrl: ". = .".to_string(),
+            },
+        }) as Box<dyn Source>
+    };
+
+    let mut cfg = VectorConfig::default();
+    for source in [aws, okta, http("gh"), http("ci")] {
+        cfg.merge(source.pipeline(&ctx).unwrap());
+    }
+
+    // Two HTTP sources, but exactly one shared listener.
+    assert!(cfg.sources.contains_key(http::HTTP_LISTENER));
+    assert!(cfg.sources.contains_key("source-aws_cloudtrail_aws1"));
+    assert!(cfg.transforms.contains_key("ocsf-http_server_gh"));
+    assert!(cfg.transforms.contains_key("ocsf-http_server_ci"));
+    assert!(cfg.transforms.contains_key("ocsf-okta_okta1"));
+
+    // The whole document round-trips through TOML.
+    let rendered = toml::to_string(&cfg).unwrap();
+    toml::from_str::<toml::Value>(&rendered).unwrap();
+    println!("{}", rendered);
 }

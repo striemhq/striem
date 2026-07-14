@@ -1,9 +1,5 @@
-//! Output destination configuration for forwarding events.
-//!
-//! Defines where StrIEM sends processed events and detection findings.
-//! Supports Vector (for downstream pipelines) and HTTP endpoints.
-
-use std::net::SocketAddr;
+//! Output destination configuration for forwarding detection findings to a
+//! downstream Vector instance.
 
 use serde::{Deserialize, Serialize};
 
@@ -84,47 +80,3 @@ impl<'de> Deserialize<'de> for VectorDestinationConfig {
     }
 }
 
-/// Output destination for processed events and detection findings.
-///
-/// StrIEM can forward events to downstream systems for additional processing,
-/// alerting, or long-term storage. The destination type determines the protocol
-/// and endpoint configuration.
-///
-/// # Variants
-/// - `Vector`: Forward to downstream Vector instance (most common)
-/// - `Http`: Forward to HTTP endpoint (webhooks, custom receivers)
-///
-/// # Use Cases
-/// - **Vector**: Chain multiple StrIEM instances or forward to Vector sinks
-/// - **Http**: Send to alerting systems, ticketing, or custom integrations
-///
-/// # Example
-/// ```yaml
-/// # Forward detection findings to downstream Vector
-/// output:
-///   vector:
-///     url: http://downstream-vector:9000
-/// ```
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum Destination {
-    /// Forward events to a Vector instance via gRPC
-    Vector(Box<VectorDestinationConfig>),
-    /// Forward events to an HTTP endpoint
-    Http(Box<HostConfig>),
-}
-
-impl Destination {
-    pub fn url(&self) -> String {
-        match self {
-            Destination::Vector(vector) => vector.cfg.url(),
-            Destination::Http(cfg) => cfg.url(),
-        }
-    }
-    pub fn address(&self) -> SocketAddr {
-        match self {
-            Destination::Vector(cfg) => cfg.cfg.address(),
-            Destination::Http(cfg) => cfg.address(),
-        }
-    }
-}

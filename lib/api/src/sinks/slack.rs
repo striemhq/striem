@@ -1,19 +1,31 @@
 use std::collections::BTreeMap;
 
 use axum::{Router, extract::{Path, State}, routing::get};
-use toml::{toml, Table};
-use crate::{ApiState, sinks::{AuthConfig, BatchConfig, Codec, Encoding, Framing, SINKS}};
+use serde::{Deserialize, Serialize};
+use crate::{ApiState, graph::Transform, sinks::{AuthConfig, BatchConfig, Codec, Encoding, Framing}};
 
-use super::{Sink, SinkType, Transform, TransformType};
+use super::{Sink, SinkType};
 pub(crate) struct Slack {
     pub id: String,
     pub token: String,
     pub channel: String
 }
 
-fn pre_slack(channel: &str) -> Transform {
+/// Persisted settings for a [`Slack`] sink.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct SlackSettings {
+    pub token: String,
+    pub channel: String,
+}
 
-    let vrl = format!(
+/// The Vector transform id feeding the Slack sink for a given channel.
+fn pre_transform_id(channel: &str) -> String {
+    format!("sink-pre-slack_{}", channel)
+}
+
+/// VRL shaping an alert into a Slack `chat.postMessage` payload.
+fn pre_slack_vrl(channel: &str) -> String {
+    format!(
         r#"
         msg = {{}}
         msg.channel = "{}"
@@ -21,32 +33,7 @@ fn pre_slack(channel: &str) -> Transform {
         . = msg
         "#,
         channel
-    );
-
-    Transform {
-        inputs: vec!["alerts".to_string()],
-        source: Some(vrl),
-        file: None,
-        condition: None,
-        routes: None,
-        transform_type: TransformType::Remap,
-    }
-}
-
-fn slack_sink(channel: &str) -> Table {
-    let inputs = format!("sink-pre-slack_{}", channel);
-    toml! {
-        [slack]
-        type = "http"
-        inputs = [inputs]
-        uri = "https://slack.com/api/chat.postMessage"
-        auth = { strategy = "bearer", token = "${SLACK_TOKEN}" }
-        request.headers = { "content-type" = "application/json" }
-        batch.max_events = 1
-        encoding.codec = "json"
-        encoding.only_fields = ["channel", "text", "blocks"]
-        framing.method = "bytes"
-    }
+    )
 }
 
 impl Sink for Slack {
@@ -58,7 +45,7 @@ impl Sink for Slack {
         SinkType::Http {
             uri: "https://slack.com/api/chat.postMessage".to_string(),
             encoding: Encoding { codec: Codec::Json, only_fields: Some(vec!["channel".to_string(), "text".to_string(), "blocks".to_string()]) },
-            inputs: vec![format!("sink-pre-slack_{}", self.channel)],
+            inputs: vec![pre_transform_id(&self.channel)],
             auth: Some(AuthConfig {
                 strategy: "bearer".to_string(),
                 token: self.token.clone(),
@@ -68,18 +55,28 @@ impl Sink for Slack {
         }
     }
 
-    fn pre(&self) -> Option<(BTreeMap<String, Transform>, String)> {
-        let pre = pre_slack(&self.channel);
+    fn typename(&self) -> String {
+        "slack".to_string()
+    }
 
-        let transforms = BTreeMap::from_iter([(format!("sink-pre-slack_{}", self.channel), pre)].into_iter());
+    fn settings(&self) -> serde_json::Value {
+        serde_json::json!({
+            "token": self.token,
+            "channel": self.channel,
+        })
+    }
 
-        Some((transforms, format!("sink-pre-slack_{}", self.channel)))
+    fn transforms(&self) -> BTreeMap<String, Transform> {
+        BTreeMap::from([(
+            pre_transform_id(&self.channel),
+            Transform::remap(pre_slack_vrl(&self.channel)).with_inputs(["alerts"]),
+        )])
     }
 }
 
 
-async fn list_sinks(State(_): State<ApiState>) -> axum::Json<Vec<serde_json::Value>> {
-    let sinks = SINKS.read().await;
+async fn list_sinks(State(state): State<ApiState>) -> axum::Json<Vec<serde_json::Value>> {
+    let sinks = state.sinks.read().await;
     let json_sinks = sinks.iter().map(|sink| {
         serde_json::to_value(sink.config()).unwrap_or_else(|_| serde_json::json!({ "error": "Failed to serialize sink config" }))
     }).collect();
@@ -87,28 +84,39 @@ async fn list_sinks(State(_): State<ApiState>) -> axum::Json<Vec<serde_json::Val
 }
 
 async fn get_sink_by_id(
-    State(_): State<ApiState>,
+    State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let sinks = SINKS.read().await;
+    let sinks = state.sinks.read().await;
     let sink = sinks.iter().find(|s| s.id() == id);
     match sink {
         Some(s) => Ok(axum::Json(serde_json::to_value(s.config()).unwrap_or_else(|_| serde_json::json!({ "error": "Failed to serialize sink config" })))),
         None => Err((axum::http::StatusCode::NOT_FOUND, format!("Sink with id '{}' not found", id))),
     }
 }
-async fn add_slack_sink(token: String, channel: String) {
-    let mut sinks = SINKS.write().await;
+
+async fn add_slack_sink(
+    state: &ApiState,
+    token: String,
+    channel: String,
+) -> Result<(), (axum::http::StatusCode, String)> {
     let new_sink = Slack { id: channel.clone(), token, channel };
-    sinks.push(Box::new(new_sink));
+
+    state
+        .store
+        .add_sink(&new_sink)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    state.sinks.write().await.push(Box::new(new_sink));
+    Ok(())
 }
 
 pub fn create_router() -> Router<ApiState> {
     axum::Router::new()
-        .route("/", get(list_sinks).post(|State(_): State<ApiState>, axum::extract::Json(payload): axum::extract::Json<serde_json::Value>| async move {
+        .route("/", get(list_sinks).post(|State(state): State<ApiState>, axum::extract::Json(payload): axum::extract::Json<serde_json::Value>| async move {
             let token = payload.get("token").and_then(|v| v.as_str()).unwrap_or_default().to_string();
             let channel = payload.get("channel").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            add_slack_sink(token, channel).await;
+            add_slack_sink(&state, token, channel).await?;
             Ok::<_, (axum::http::StatusCode, String)>(axum::Json(serde_json::json!({"status": "success"})))
         }))
         .route("/{id}", get(get_sink_by_id))

@@ -8,6 +8,7 @@ fn main() {
     let proto_dir = Path::new(&out_dir).join("proto");
     fs::create_dir_all(&proto_dir).unwrap();
 
+    // Vector's protocol definitions are fetched from upstream and cached in OUT_DIR.
     if !(Path::exists(&proto_dir.join("event.proto"))
         && Path::exists(&proto_dir.join("vector.proto")))
     {

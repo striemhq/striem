@@ -5,14 +5,14 @@
 //!
 //! # Protocol
 //! Vector sends PushEventsRequest with batches of events.
-//! Server broadcasts to subscribers (detection handler, storage backend).
-
-use std::sync::Arc;
+//! The server forwards each batch to the single downstream consumer (the
+//! detection engine). Parquet storage is handled by Vector itself, so there is
+//! no in-process fan-out to justify broadcasting.
 
 use anyhow::{Result, anyhow};
-use log::{debug, error, info};
-use striem_common::{SysMessage, event::Event};
-use tokio::sync::broadcast;
+use log::debug;
+use striem_common::event::Event;
+use tokio::sync::mpsc;
 
 use crate::{
     event::event_wrapper::Event as VectorEventWrapper,
@@ -22,21 +22,24 @@ use crate::{
     },
 };
 
-struct VectorService {
-    channel: broadcast::Sender<Arc<Vec<Event>>>,
+/// Vector protocol implementation. Receives event batches over gRPC and forwards
+/// them to the single downstream consumer (the detection engine).
+pub struct VectorService {
+    channel: mpsc::Sender<Vec<Event>>,
 }
 
 #[tonic::async_trait]
 impl Vector for VectorService {
-    /// Receive and broadcast log events to subscribers.
+    /// Receive log events and forward them to the detection engine.
     ///
     /// # Event Type Filtering
     /// Only log events are supported. Metrics and traces are rejected
     /// with UNIMPLEMENTED status to fail fast rather than silently drop.
     ///
-    /// # Broadcasting
-    /// Events are Arc-wrapped before sending to minimize cloning overhead
-    /// with multiple subscribers (detection + storage + potential Vector client).
+    /// # Backpressure
+    /// The batch is moved into the channel with no cloning. `send` awaits
+    /// capacity, so a slow detection engine backpressures ingestion rather than
+    /// dropping events.
     async fn push_events(
         &self,
         request: tonic::Request<vector::PushEventsRequest>,
@@ -62,10 +65,9 @@ impl Vector for VectorService {
             })
             .collect::<Result<Vec<Event>, tonic::Status>>()?;
 
-        let events = Arc::new(events);
-
         self.channel
             .send(events)
+            .await
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
 
         Ok(tonic::Response::new(vector::PushEventsResponse {}))
@@ -81,10 +83,12 @@ impl Vector for VectorService {
     }
 }
 
-/// Vector gRPC server with broadcast channel for subscribers.
-/// Channel is created at construction but not started until serve() is called.
+/// Vector gRPC server holding the ingestion channel to the detection engine.
+/// The channel is created at construction; the receiver is handed to the
+/// consumer via [`Server::subscribe`] and the service via [`Server::service`].
 pub struct Server {
     service: Option<VectorService>,
+    rx: Option<mpsc::Receiver<Vec<Event>>>,
 }
 
 impl Default for Server {
@@ -94,59 +98,40 @@ impl Default for Server {
 }
 
 impl Server {
-    /// Create server with 256-event buffer capacity.
+    /// Create server with a 256-batch buffer.
     ///
     /// # Buffer Sizing
-    /// 256 provides backpressure for slow subscribers without excessive memory.
-    /// Vector batches events, so this represents ~10-50 batches depending on
-    /// Vector's batch settings.
+    /// 256 buffers slow-consumer bursts without excessive memory. Vector batches
+    /// events, so this represents ~10-50 Vector batches depending on its batch
+    /// settings; beyond it, `push_events` awaits capacity (backpressure).
     pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel(256);
         Self {
-            service: Some(VectorService {
-                channel: broadcast::channel(256).0,
-            }),
+            service: Some(VectorService { channel: tx }),
+            rx: Some(rx),
         }
     }
 
-    pub async fn serve(
-        &mut self,
-        addr: &std::net::SocketAddr,
-        mut shutdown: tokio::sync::broadcast::Receiver<SysMessage>,
-    ) -> Result<()> {
-        //let addr = addr.parse()?;
-
+    /// Take the configured tonic service so the caller can mount it on a
+    /// [`tonic::transport::Server`] alongside other services (e.g. the
+    /// detection-admin service). Consumes the internal service; call
+    /// [`Server::subscribe`] first to obtain event receivers.
+    ///
+    /// Gzip decompression is accepted to match Vector's default client
+    /// compression settings.
+    pub fn service(&mut self) -> Result<VectorServer<VectorService>> {
         let service = self
             .service
             .take()
-            .ok_or_else(|| anyhow!("service already running"))?;
+            .ok_or_else(|| anyhow!("service already taken"))?;
 
-        tonic::transport::Server::builder()
-            .add_service(
-                VectorServer::new(service)
-                    .accept_compressed(tonic::codec::CompressionEncoding::Gzip),
-            )
-            .serve_with_shutdown(*addr, async {
-                loop {
-                    match shutdown.recv().await {
-                        Ok(SysMessage::Shutdown) => break,
-                        Ok(_) => continue,
-                        Err(_) => {
-                            error!("system broadcast channel closed unexpectedly");
-                            break;
-                        }
-                    }
-                }
-                info!("Vector listener shutting down...");
-            })
-            .await?;
-        Ok(())
+        Ok(VectorServer::new(service).accept_compressed(tonic::codec::CompressionEncoding::Gzip))
     }
 
-    pub async fn subscribe(&self) -> Result<broadcast::Receiver<Arc<Vec<Event>>>> {
-        let service = self
-            .service
-            .as_ref()
-            .ok_or_else(|| anyhow!("service not running"))?;
-        Ok(service.channel.subscribe())
+    /// Take the ingestion receiver. Single-consumer: can only be called once.
+    pub fn subscribe(&mut self) -> Result<mpsc::Receiver<Vec<Event>>> {
+        self.rx
+            .take()
+            .ok_or_else(|| anyhow!("event receiver already taken"))
     }
 }

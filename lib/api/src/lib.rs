@@ -3,12 +3,13 @@ mod alerts;
 mod destination;
 mod detections;
 pub mod features;
-mod persist;
+mod graph;
 mod query;
 mod routes;
 mod server;
 pub(crate) mod sinks;
 pub(crate) mod sources;
+mod store;
 mod vector;
 
 use arc_swap::ArcSwap;
@@ -21,10 +22,17 @@ use striem_common::SysMessage;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use sigmars::SigmaCollection;
 use striem_config::StrIEMConfig;
 
 use actions::Mcp;
+use sinks::Sink;
+use sources::Source;
+use store::Store;
+
+use striem_detection::detections_client::DetectionsClient;
+
+/// gRPC client to the detection microservice's admin API.
+pub(crate) type DetectionClient = DetectionsClient<tonic::transport::Channel>;
 
 #[cfg(feature = "duckdb")]
 pub(crate) type Pool = r2d2::Pool<duckdb::DuckdbConnectionManager>;
@@ -35,12 +43,15 @@ pub(crate) type Pool = ();
 
 #[derive(Clone)]
 pub(crate) struct ApiState {
-    pub detections: Arc<RwLock<SigmaCollection>>,
+    pub detections: DetectionClient,
     pub actions: Option<Arc<Mcp>>,
     pub db: Option<Pool>,
     pub features: HeaderValue,
     pub sys: tokio::sync::broadcast::Sender<SysMessage>,
     pub config: Arc<ArcSwap<StrIEMConfig>>,
+    pub sources: Arc<RwLock<Vec<Box<dyn Source>>>>,
+    pub sinks: Arc<RwLock<Vec<Box<dyn Sink>>>>,
+    pub store: Arc<dyn Store>,
 }
 
 #[cfg(feature = "duckdb")]
@@ -97,11 +108,6 @@ pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
                         })
                         .map_err(anyhow::Error::from)
                 })
-            })
-            .and_then(|pool| {
-                let mut conn = pool.get().map_err(anyhow::Error::from)?;
-                crate::persist::init(&mut conn)?;
-                Ok(pool)
             })
             .inspect_err(|e| {
                 error!("{}", e);

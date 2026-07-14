@@ -6,46 +6,53 @@
 //! - PATCH /api/1/detections/:id - Enable/disable rule
 //! - POST /api/1/detections - Upload new YAML rule
 //!
-//! Rules are stored in-memory in SigmaCollection and persisted to disk.
-//! Changes affect running detection engine immediately via RwLock.
+//! These endpoints are a thin proxy: the rules themselves live in the detection
+//! microservice, which owns the SigmaCollection and persistence. Each handler
+//! forwards to the detection-admin gRPC service and translates gRPC status codes
+//! into HTTP responses.
 
-use anyhow::Result;
-use axum::{extract::State, routing::get};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::routing::get;
+use tonic::Code;
+
+use striem_detection::{CreateRequest, GetRequest, ListRequest, SetEnabledRequest};
 
 use crate::ApiState;
+
+/// Translate a gRPC status from the detection service into an HTTP error.
+fn grpc_error(status: tonic::Status) -> (StatusCode, String) {
+    let code = match status.code() {
+        Code::NotFound => StatusCode::NOT_FOUND,
+        Code::AlreadyExists => StatusCode::CONFLICT,
+        Code::InvalidArgument => StatusCode::BAD_REQUEST,
+        Code::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (code, status.message().to_string())
+}
 
 /// List all detection rules with summary information.
 ///
 /// # Response Format
 /// Returns array of rule summaries with: id, title, description, enabled, level, logsource.
-/// Full rule details (detection logic, tags, etc.) omitted for performance.
-///
-/// # Error Handling
-/// Logs serialization errors but returns empty array rather than 500.
-/// This prevents one malformed rule from breaking the entire list view.
+/// Summaries are computed by the detection service; a malformed rule is skipped there.
 async fn list_rules(
     State(state): State<ApiState>,
-) -> Result<axum::Json<Vec<serde_json::Value>>, (axum::http::StatusCode, String)> {
-    let rules = serde_json::to_value(&*state.detections.read().await)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .as_array()
-        .map(|r| {
-            r.iter()
-                .flat_map(|rule| {
-                    rule.as_object().and_then(|obj| {
-                        Some(serde_json::json!({
-                            "id": obj.get("id")?,
-                            "title": obj.get("title")?,
-                            "description": obj.get("description"),
-                            "enabled": obj.get("enabled")?.as_bool().unwrap_or(true),
-                            "level": obj.get("level"),
-                            "logsource": obj.get("logsource"),
-                        }))
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+) -> Result<axum::Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let mut client = state.detections.clone();
+    let summaries = client
+        .list(ListRequest {})
+        .await
+        .map_err(grpc_error)?
+        .into_inner()
+        .summaries;
+
+    // Each summary is a JSON object string; skip any that fail to parse.
+    let rules = summaries
+        .iter()
+        .filter_map(|s| serde_json::from_str(s).ok())
+        .collect();
 
     Ok(axum::Json(rules))
 }
@@ -53,17 +60,17 @@ async fn list_rules(
 async fn get_rule(
     State(state): State<ApiState>,
     axum::extract::Path(rule_id): axum::extract::Path<String>,
-) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let detections = state.detections.read().await;
-    let rule = detections.get(&rule_id).ok_or_else(|| {
-        (
-            axum::http::StatusCode::NOT_FOUND,
-            format!("Rule with id {} not found", rule_id),
-        )
-    })?;
+) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
+    let mut client = state.detections.clone();
+    let rule = client
+        .get(GetRequest { id: rule_id })
+        .await
+        .map_err(grpc_error)?
+        .into_inner()
+        .rule;
 
-    let rule_json = serde_json::to_value(rule)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let rule_json = serde_json::from_str(&rule)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(axum::Json(rule_json))
 }
@@ -77,23 +84,20 @@ async fn patch_rule(
     State(state): State<ApiState>,
     axum::extract::Path(rule_id): axum::extract::Path<String>,
     axum::extract::Json(payload): axum::extract::Json<PatchRulePayload>,
-) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let detections = state.detections.read().await;
-    let rule = detections.get(&rule_id).ok_or_else(|| {
-        (
-            axum::http::StatusCode::NOT_FOUND,
-            format!("Rule with id {} not found", rule_id),
-        )
-    })?;
+) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
+    let mut client = state.detections.clone();
+    let rule = client
+        .set_enabled(SetEnabledRequest {
+            id: rule_id,
+            enabled: payload.enabled,
+        })
+        .await
+        .map_err(grpc_error)?
+        .into_inner()
+        .rule;
 
-    if payload.enabled {
-        rule.enable();
-    } else {
-        rule.disable();
-    }
-
-    let rule_json = serde_json::to_value(rule)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let rule_json = serde_json::from_str(&rule)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(axum::Json(rule_json))
 }
@@ -104,46 +108,20 @@ async fn patch_rule(
 /// Expects raw YAML in request body (not JSON-wrapped).
 /// Content-Type should be text/yaml or application/x-yaml.
 ///
-/// # Validation
-/// - Parses YAML as SigmaRule struct (validates schema)
-/// - Checks for ID conflicts with existing rules
-/// - Validates rule can be compiled and indexed
-///
-/// # Side Effects
-/// Adds rule to in-memory collection (immediately available for detection)
-/// and persists to disk for reload on restart.
+/// # Validation & Side Effects
+/// The detection service parses/validates the YAML, rejects id conflicts, adds
+/// the rule to the live collection, and persists it to disk.
 async fn post_rule(
     State(state): State<ApiState>,
     body: String,
-) -> Result<axum::Json<String>, (axum::http::StatusCode, String)> {
-    // Parse the YAML content
-    let rule: sigmars::SigmaRule = serde_yaml::from_str(&body).map_err(|e| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            format!("Invalid YAML: {}", e),
-        )
-    })?;
-    let id = rule.id.clone();
-    let mut detections = state.detections.write().await;
-    if detections.get(&id).is_some() {
-        return Err((
-            axum::http::StatusCode::CONFLICT,
-            format!("Rule with id {} already exists", rule.id),
-        ));
-    }
-    detections
-        .add(rule)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if let Some(striem_config::StringOrList::String(dir)) = &state.config.load().detections {
-        let path = format!("{}/{}.yaml", dir, id);
-        std::fs::write(&path, body).map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to write rule to disk: {}", e),
-            )
-        })?;
-    }
+) -> Result<axum::Json<String>, (StatusCode, String)> {
+    let mut client = state.detections.clone();
+    let id = client
+        .create(CreateRequest { yaml: body })
+        .await
+        .map_err(grpc_error)?
+        .into_inner()
+        .id;
 
     Ok(axum::Json(id))
 }

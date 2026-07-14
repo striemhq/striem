@@ -19,10 +19,11 @@ use arc_swap::ArcSwap;
 use axum::http::HeaderValue;
 use axum::middleware;
 use log::{error, info};
-use sigmars::SigmaCollection;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
+
+use striem_detection::detections_client::DetectionsClient;
 
 use striem_config::StrIEMConfig;
 use striem_config::StringOrList;
@@ -30,8 +31,7 @@ use striem_config::StringOrList;
 use striem_common::SysMessage;
 
 use crate::{
-    ApiState, actions::Mcp, features::feature_flag_middleware, initdb, persist,
-    routes::create_router, sources::SOURCES,
+    ApiState, actions::Mcp, features::feature_flag_middleware, initdb, routes::create_router, store,
 };
 
 /// Initialize and run the API server.
@@ -46,7 +46,6 @@ use crate::{
 /// Redirects / to /ui for convenience.
 pub async fn serve(
     config: &Arc<ArcSwap<StrIEMConfig>>,
-    detections: Arc<RwLock<SigmaCollection>>,
     sys: tokio::sync::broadcast::Sender<SysMessage>,
 ) -> Result<()> {
     let config_container = config.clone();
@@ -54,19 +53,26 @@ pub async fn serve(
 
     let mut features: Vec<String> = Vec::new();
 
+    // Detection rule management is delegated to the detection microservice over
+    // gRPC. Connect lazily so the API can start before the detection service is
+    // reachable; per-request calls establish the connection on first use.
+    let endpoint = config.detection_endpoint();
+    let detections = DetectionsClient::new(
+        tonic::transport::Endpoint::from_shared(endpoint.clone())
+            .map_err(|e| anyhow::anyhow!("invalid detection endpoint {}: {}", endpoint, e))?
+            .connect_lazy(),
+    );
+    info!("detection admin client targeting {}", endpoint);
+
     // Create DB connection pool
     let db = initdb(&config).inspect(|_| {
         #[cfg(feature = "duckdb")]
         features.push("duckdb".to_string());
     });
 
-    if let Some(db) = db.as_ref() {
-        let mut conn = db
-            .get()
-            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
-        let mut sources = SOURCES.write().await;
-        sources.append(&mut persist::sources(&mut conn).unwrap_or_default());
-    };
+    let store = store::open(&db);
+    let sources = Arc::new(RwLock::new(store.load_sources().unwrap_or_default()));
+    let sinks = Arc::new(RwLock::new(store.load_sinks().unwrap_or_default()));
 
     let actions = if let Some(mcp_config) = &config.api.mcp {
         match &mcp_config.url {
@@ -107,6 +113,9 @@ pub async fn serve(
         config: config_container,
         sys: sys.clone(),
         features: HeaderValue::from_str(&features.join(","))?,
+        sources,
+        sinks,
+        store,
     };
 
     let mut app = create_router()

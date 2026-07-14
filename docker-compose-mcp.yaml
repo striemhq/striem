@@ -1,5 +1,6 @@
+# Overlay that adds the MCP action server and points the API at it.
+# Run with: docker compose -f docker-compose.yaml -f docker-compose-mcp.yaml up
 services:
-
   mcp:
     build:
       context: extra/mcp
@@ -23,15 +24,20 @@ services:
       file: docker-compose.yaml
       service: setup
 
-  striem:
+  api:
     extends:
       file: docker-compose.yaml
-      service: striem
+      service: api
     environment:
       - STRIEM_API_MCP_URL=http://mcp:6000/mcp
     depends_on:
       mcp:
         condition: service_started
+
+  detection:
+    extends:
+      file: docker-compose.yaml
+      service: detection
 
   vector:
     extends:

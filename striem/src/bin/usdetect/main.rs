@@ -1,60 +1,38 @@
-use std::net::SocketAddr;
-use tokio::sync::broadcast;
-use striem_vector::{Client, Server};
-use striem_common::event::Event;
-use anyhow::Result;
-use log::info;
-use std::env;
+//! Standalone detection microservice.
+//!
+//! Runs the StrIEM detection service on its own: a Vector gRPC listener, the
+//! Sigma detection engine, an optional downstream Vector forwarder, and the
+//! detection-admin gRPC API. Configuration is loaded from the environment
+//! (STRIEM_* variables) and any striem config file, identically to the main
+//! daemon; the API service connects to this process over gRPC.
+
 use std::sync::Arc;
 
-use striem::detection::DetectionHandler;
+use anyhow::Result;
+use log::info;
+use striem_common::SysMessage;
+use striem_config::StrIEMConfig;
+use tokio::sync::broadcast;
 
-use sigmars::SigmaCollection;
+use striem::detection::DetectionService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    let addr = env::var("STRIEM_BIND_ADDRESS")
-    .unwrap_or("127.0.0.1:50051".to_string())
-    .parse::<SocketAddr>()
-    .map_err(|e| anyhow::anyhow!("Invalid STRIEM_BIND_ADDRESS value: {}", e))?;
+    let config = Arc::new(arc_swap::ArcSwap::from_pointee(StrIEMConfig::new()?));
 
-    let dest = env::var("STRIEM_VECTOR_URI")?;
+    let sys = broadcast::channel::<SysMessage>(1).0;
 
-    let rules = SigmaCollection::new_from_dir(&env::var("STRIEM_DETECTIONS")?)
-        .map_err(|e| anyhow::anyhow!("Failed to load Sigma rules: {}", e))?;
+    let signal = sys.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        info!("Shutdown signal received, stopping StrIEM Detect...");
+        signal.send(SysMessage::Shutdown).ok();
+    });
 
-    let (tx, rx) = broadcast::channel::<Arc<Vec<Event>>>(100);
-    let (shutdown, shutdown_rx) = broadcast::channel::<striem_common::SysMessage>(1);
+    let service = DetectionService::new(config, sys).await?;
 
-    let mut server = Server::new();
-
-    let events = server.subscribe().await?;
-
-    let mut detect = DetectionHandler::new(events,
-                                  tx,
-                                  Arc::new(tokio::sync::RwLock::new(rules)),
-                                  shutdown_rx);
-
-    let mut client = Client::new(&dest, rx, shutdown.subscribe()).await?;
-
-    info!("Starting StrIEM Detect on port {}...", addr.port());
-
-    tokio::select! {
-        _ = detect.run() => { unreachable!("Detection handler exited unexpectedly") },
-        _ = server.serve(&addr, shutdown.subscribe()) => {
-            shutdown.send(striem_common::SysMessage::Shutdown)?;
-            Err(anyhow::anyhow!("Vector server exited unexpectedly"))?;
-        },
-        _ = client.run() => {
-            shutdown.send(striem_common::SysMessage::Shutdown)?;
-            Err(anyhow::anyhow!("Vector client exited unexpectedly"))?;
-        },
-        _ = tokio::signal::ctrl_c() => {
-            info!("Shutdown signal received, stopping StrIEM Detect...");
-            shutdown.send(striem_common::SysMessage::Shutdown)?;
-        }
-    }
-    Ok(())
+    info!("Starting StrIEM Detect...");
+    service.run().await
 }

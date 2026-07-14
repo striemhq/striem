@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use erased_serde as es;
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 
-use super::{Decoding, Source, SourceType, Transform};
+use super::{Decoding, Logsource, Source, SourceType};
+use crate::graph::Transform;
 
 #[derive(Serialize, Deserialize)]
 pub struct ImdsAuthentication {
@@ -113,27 +114,17 @@ impl Source for AwsCloudtrail {
         &self.config
     }
 
-    fn logsource_product(&self) -> Option<String> {
-        Some("aws".to_string())
+    fn logsource(&self) -> Logsource {
+        Logsource {
+            product: Some("aws".to_string()),
+            service: Some("cloudtrail".to_string()),
+            ..Default::default()
+        }
     }
 
-    fn logsource_service(&self) -> Option<String> {
-        Some("cloudtrail".to_string())
-    }
-
-    fn pre(&self) -> Option<(BTreeMap<String, Transform>, String)> {
-        let source_id = format!("source-{}_{}", self.sourcetype(), self.id());
-        let pre_id = format!("pre-{}_{}", self.sourcetype(), self.id());
-
-        let transforms = BTreeMap::from([(
-            pre_id.clone(),
-            Transform {
-                inputs: vec![source_id.clone()],
-                source: Some(". = .Records".to_string()),
-                file: None,
-                ..Default::default()
-            },
-        )]);
-        Some((transforms, pre_id))
+    /// CloudTrail delivers events wrapped in a `Records` array; unwrap it
+    /// before normalization.
+    fn preprocess(&self) -> Option<Transform> {
+        Some(Transform::remap(". = .Records"))
     }
 }

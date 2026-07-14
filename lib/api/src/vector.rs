@@ -1,174 +1,123 @@
-use crate::{ApiState, sinks::SINKS, sources::SOURCES};
+use crate::ApiState;
+use crate::graph::{Component, RenderCtx, Transform, VectorConfig};
 use axum::{Router, extract::State, routing::get};
-use striem_config::output::Destination;
-use toml::{Table, toml};
+use striem_config::StrIEMConfig;
+use toml::toml;
+
+/// The `${STRIEM_REMAPS}` env var isn't interpolated by Vector's HTTP config
+/// provider, so we resolve it here and fall back to the literal placeholder.
+fn remaps_dir() -> String {
+    std::env::var("STRIEM_REMAPS").unwrap_or_else(|_| "${STRIEM_REMAPS}".to_string())
+}
+
+/// The static scaffolding every generated config starts from: a stdin seed so
+/// the `ocsf-*` wildcard always has a producer, the `alerts` filter, and the
+/// `sink-striem` forwarder.
+fn boilerplate(config: &StrIEMConfig) -> VectorConfig {
+    let fqdn = config.fqdn.clone().unwrap_or_else(|| config.input.url());
+
+    let mut cfg = VectorConfig::default();
+
+    cfg.sources.insert(
+        "ocsf-stdin".to_string(),
+        Component::Table(toml! {
+            type = "stdin"
+            decoding = { codec = "json" }
+            framing = { method = "newline_delimited" }
+        }),
+    );
+
+    cfg.transforms.insert(
+        "alerts".to_string(),
+        Transform::filter(".class_uid == 2004").with_inputs(["ocsf-*"]),
+    );
+
+    cfg.sinks.insert(
+        "sink-striem".to_string(),
+        Component::Table(toml! {
+            type = "vector"
+            inputs = ["ocsf-*"]
+            address = fqdn
+        }),
+    );
+
+    cfg
+}
+
+/// Apply the pieces derived from the configured Vector destination: the API
+/// endpoint, the primary `vector` source, and optional HEC ingest. Returns the
+/// HTTP ingest address (if any) for use by HTTP sources.
+fn apply_destination(cfg: &mut VectorConfig, config: &StrIEMConfig) -> Option<String> {
+    let Some(vector) = &config.output else {
+        return None;
+    };
+
+    if let Some(api) = &vector.api {
+        let address = api.address().to_string();
+        cfg.api = Some(Component::Table(toml! {
+            enabled = true
+            address = address
+        }));
+    }
+
+    let address = vector.cfg.address().to_string();
+    cfg.sources.insert(
+        "source-striem".to_string(),
+        Component::Table(toml! {
+            type = "vector"
+            address = address
+            version = "2"
+        }),
+    );
+
+    if let Some(hec) = &vector.hec {
+        let address = hec.address().to_string();
+        cfg.sources.insert(
+            "source-hec".to_string(),
+            Component::Table(toml! {
+                type = "splunk_hec"
+                address = address
+                store_hec_token = true
+            }),
+        );
+    }
+
+    vector.http.as_ref().map(|http| http.address().to_string())
+}
 
 async fn get_vector_config(
     State(state): State<ApiState>,
 ) -> Result<String, (axum::http::StatusCode, String)> {
-    let mut config = toml! {
-        [schema]
-        log_namespace = true
+    let config = state.config.load();
+
+    let mut cfg = boilerplate(&config);
+    let http_address = apply_destination(&mut cfg, &config);
+
+    let ctx = RenderCtx {
+        remaps_dir: remaps_dir(),
+        http_address,
     };
 
-    let striemconfig = state.config.load();
-
-    let mut transforms = toml! {
-        [alerts]
-        type = "filter"
-        inputs = ["ocsf-*"]
-        condition = ".class_uid == 2004"
+    let internal = |e: anyhow::Error| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            e.to_string(),
+        )
     };
 
-    let mut sources = toml! {
-        // this ensures the ocsf-* wildcard input always has at least one producer
-        [ocsf-stdin]
-        type = "stdin"
-        decoding = { codec = "json" }
-        framing = { method = "newline_delimited" }
-    };
-
-    let fqdn = striemconfig
-        .fqdn
-        .clone()
-        .unwrap_or_else(|| striemconfig.input.url());
-
-    let mut sinks = toml! {
-        [sink-striem]
-        type = "vector"
-        inputs = ["ocsf-*"]
-        address = fqdn
-    };
-
-    if let Some(Destination::Vector(ref cfg)) = striemconfig.output {
-        if let Some(api) = &cfg.api {
-            let api_address = api.address().to_string();
-            let api_config = toml! {
-                [api]
-                enabled = true
-                address = api_address
-            };
-            config.extend(api_config);
-        }
-
-        let address = cfg.cfg.address().to_string();
-
-        sources.insert(
-            "source-striem".to_string(),
-            toml! {
-                type = "vector"
-                address = address
-                version = "2"
-            }
-            .into(),
-        );
-
-        // TODO: set valid_tokens based on the list of sources
-        if let Some(hec) = &cfg.hec {
-            let address = hec.address().to_string();
-            sources.insert(
-                "source-hec".to_string(),
-                toml! {
-                    type = "splunk_hec"
-                    address = address
-                    store_hec_token = true
-                }
-                .into(),
-            );
-        }
-
-        if let Some(http) = &cfg.http {
-            /* some log producers, notably Github webhooks
-             * send JSON data but don't set the content-type header
-             * so rather than relying on Vector's json decoding codec
-             * take the raw body and attempt to parse it with VRL
-             */
-            let vrl = [
-                r#"body, _ = string(.)"#,
-                r#"if !is_null(body) {"#,
-                r#"  . = parse_json(body) ?? body"#,
-                r#"}"#,
-            ]
-            .join("\n");
-
-            let address = http.address().to_string();
-            sources.extend(toml! {
-                [source-http]
-                type = "http_server"
-                address = address
-                headers = ['*']
-                strict_path = false
-
-                [source-http.decoding]
-                codec = "vrl"
-                vrl = {"source" = vrl}
-            });
-            transforms.extend(toml! {
-                [http_route]
-                type = "exclusive_route"
-                inputs = ["source-http"]
-                routes = []
-            });
-        }
+    for source in state.sources.read().await.iter() {
+        cfg.merge(source.pipeline(&ctx).map_err(internal)?);
+    }
+    for sink in state.sinks.read().await.iter() {
+        cfg.merge(sink.pipeline().map_err(internal)?);
     }
 
-    SOURCES.read().await.iter().for_each(|source| {
-        Table::try_from(source)
-            .map(|t| {
-                if let Some(s) = t.get("sources").and_then(|s| s.as_table()) {
-                    sources.extend(s.clone());
-                }
-
-                if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) {
-                    transforms.extend(t.clone());
-                }
-
-                if let super::sources::SourceType::Http = source.sourcetype() {
-                    let _ = transforms
-                        .get_mut("http_route")
-                        .and_then(|tr| tr.as_table_mut())
-                        .and_then(|tr| tr.get_mut("routes").and_then(|r| r.as_array_mut()))
-                        .map(|r| {
-                            let condition = format!("%http_server.path == \"/{}\"", source.id());
-                            let name = source.id();
-                            r.push(
-                                toml! {
-                                    name = name
-                                    condition = condition
-                                }
-                                .into(),
-                            );
-                        });
-                }
-            })
-            .ok();
-    });
-
-    SINKS.read().await.iter().for_each(|sink| {
-        Table::try_from(sink)
-            .map(|t| {
-                if let Some(s) = t.get("sinks").and_then(|s| s.as_table()) {
-                    sinks.extend(s.clone());
-                }
-
-                if let Some(t) = t.get("transforms").and_then(|t| t.as_table()) {
-                    transforms.extend(t.clone());
-                }
-            })
-            .ok();
-    });
-
-    if !sources.is_empty() {
-        config.insert("sources".to_string(), sources.into());
-    }
-    if !transforms.is_empty() {
-        config.insert("transforms".to_string(), transforms.into());
-    }
-    if !sinks.is_empty() {
-        config.insert("sinks".to_string(), sinks.into());
-    }
-
-    Ok(config.to_string())
+    toml::to_string(&cfg).map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            e.to_string(),
+        )
+    })
 }
 
 pub fn create_router() -> axum::Router<ApiState> {

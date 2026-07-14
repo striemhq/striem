@@ -19,7 +19,6 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 
 pub mod api;
-pub mod input;
 pub mod output;
 pub mod storage;
 
@@ -141,30 +140,28 @@ impl HostConfig {
     }
 }
 
-const CWD: fn() -> PathBuf = || {
-    std::env::current_dir()
-        .unwrap_or_else(|e| panic!("Failed to get current working directory: {}", e))
-};
-
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 struct StrIEMConfigOptions {
-    /// Path to the StrIEM source configuration & rule database
-    /// (defaults to current working directory)
-    #[serde(default = "CWD")]
-    db: PathBuf,
+    /// Directory for the query database (DuckDB). Optional: when unset, event
+    /// querying is unavailable unless a `storage` path is configured.
+    db: Option<PathBuf>,
 
-    /// Location of top-level Sigma detection directory
-    /// (can be a list or single path)
+    /// Directory of Sigma detection rules to load at startup and persist new
+    /// rules to. Optional: by default no rules are stored on disk — they are
+    /// loaded through the UI and live only in memory.
     #[serde(with = "serde_yaml::with::singleton_map")]
     detections: Option<StringOrList>,
 
-    /// Input listener configuration
-    #[serde(with = "serde_yaml::with::singleton_map")]
-    input: Option<input::Listener>,
+    /// gRPC endpoint of the detection microservice, used by the API service to
+    /// administer rules. Defaults to the `input` listener address, since the
+    /// detection service mounts its admin API on the same server.
+    detection: Option<HostConfig>,
 
-    /// Output destination configuration
-    #[serde(with = "serde_yaml::with::singleton_map")]
-    output: Option<output::Destination>,
+    /// Vector gRPC ingestion listener address.
+    input: Option<HostConfig>,
+
+    /// Downstream Vector destination for detection findings.
+    output: Option<output::VectorDestinationConfig>,
 
     /// Storage backend configuration
     storage: Option<storage::StorageConfig>,
@@ -182,9 +179,11 @@ pub struct StrIEMConfig {
 
     pub detections: Option<StringOrList>,
 
-    pub input: input::Listener,
+    pub detection: Option<HostConfig>,
 
-    pub output: Option<output::Destination>,
+    pub input: HostConfig,
+
+    pub output: Option<output::VectorDestinationConfig>,
 
     pub storage: Option<storage::StorageConfig>,
 
@@ -196,9 +195,12 @@ pub struct StrIEMConfig {
 impl From<StrIEMConfigOptions> for StrIEMConfig {
     fn from(val: StrIEMConfigOptions) -> Self {
         StrIEMConfig {
-            db: Some(val.db.clone()),
+            db: val.db,
             detections: val.detections,
-            input: val.input.unwrap_or_default(),
+            detection: val.detection,
+            input: val.input.unwrap_or_else(|| {
+                HostConfig::default().set_port(striem_common::DEFAULT_STRIEM_LISTEN_PORT)
+            }),
             output: val.output,
             storage: val.storage,
             api: val.api.unwrap_or_default(),
@@ -310,6 +312,17 @@ impl StrIEMConfig {
         Self::check(&config)?;
 
         Ok(config.into())
+    }
+
+    /// gRPC URL the API service should use to reach the detection microservice.
+    ///
+    /// Prefers an explicit `detection` endpoint, otherwise derives it from the
+    /// `input` listener (where the detection service mounts its admin API).
+    pub fn detection_endpoint(&self) -> String {
+        self.detection
+            .as_ref()
+            .map(|detection| detection.url())
+            .unwrap_or_else(|| self.input.url())
     }
 
     fn check(config: &StrIEMConfigOptions) -> Result<()> {

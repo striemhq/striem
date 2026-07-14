@@ -20,7 +20,6 @@ pub struct UIConfig {
 #[derive(Debug, Serialize, Clone)]
 pub struct ApiConfig {
     pub enabled: bool,
-    pub data: Option<String>,
     pub mcp: Option<MCPConfig>,
     pub ui: Option<UIConfig>,
     pub host: HostConfig,
@@ -36,7 +35,6 @@ impl<'de> Deserialize<'de> for ApiConfig {
             enabled: Option<bool>,
             #[serde(flatten)]
             host: Option<HostConfig>,
-            data: Option<String>,
             mcp: Option<MCPConfig>,
             ui: Option<UIConfig>,
         }
@@ -52,7 +50,6 @@ impl<'de> Deserialize<'de> for ApiConfig {
             host: helper
                 .host
                 .unwrap_or_else(|| HostConfig::default().set_port(DEFAULT_API_LISTEN_PORT)),
-            data: helper.data,
             mcp: helper.mcp,
             ui: helper.ui,
         })
@@ -64,7 +61,6 @@ impl Default for ApiConfig {
         ApiConfig {
             enabled: true,
             host: HostConfig::default().set_port(DEFAULT_API_LISTEN_PORT),
-            data: None,
             mcp: None,
             ui: Some(UIConfig::default()),
         }

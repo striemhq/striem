@@ -4261,9 +4261,11 @@ dependencies = [
  "striem_api",
  "striem_common",
  "striem_config",
+ "striem_detection",
  "striem_vector",
  "tokio",
  "tokio-stream",
+ "tonic",
  "uuid",
 ]
 
@@ -4290,9 +4292,11 @@ dependencies = [
  "sigmars",
  "striem_common",
  "striem_config",
+ "striem_detection",
  "tempfile",
  "tokio",
  "toml",
+ "tonic",
  "tower-http",
  "uuid",
 ]
@@ -4323,6 +4327,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "striem_detection"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "striem_vector"
 version = "0.1.0"
 dependencies = [
@@ -4335,6 +4348,7 @@ dependencies = [
  "serde_json",
  "striem_common",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
  "uuid",

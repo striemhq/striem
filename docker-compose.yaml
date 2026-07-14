@@ -1,3 +1,15 @@
+# StrIEM runs as three long-lived services plus a one-shot setup:
+#
+#   vector      normalizes incoming logs to OCSF and fans events out
+#   detection   receives OCSF events over gRPC, runs Sigma, hosts the rule-admin API
+#   api         serves the HTTP/UI, generates Vector's config, proxies rule admin
+#
+# Data flow:
+#   vector --(OCSF, grpc)--> detection --(findings, grpc)--> vector --> storage
+#   api  <--(admin, grpc)--> detection ;  vector <--(config, http)-- api
+#
+# `api` and `detection` share one image (built once); build it with
+#   docker compose build
 services:
   setup:
     build:
@@ -7,11 +19,12 @@ services:
       - ./data:/data
     restart: "no"
 
-  striem:
+  api:
     image: striem:latest
     build:
       context: .
       dockerfile: Dockerfile
+    command: ["striem_api"]
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -19,19 +32,42 @@ services:
       - "8080:8080"
     environment:
       - RUST_LOG=info
-      - STRIEM_APPDATA=/data
-      - STRIEM_DB=/data
       - STRIEM_API_ENABLED=1
       - STRIEM_API_ADDRESS=0.0.0.0:8080
-      - STRIEM_INPUT_VECTOR_URL=http://striem:3000
-      - STRIEM_OUTPUT_VECTOR_URL=http://vector:9000
-      - STRIEM_OUTPUT_VECTOR_HTTP_ADDRESS=0.0.0.0:9900
-      - STRIEM_OUTPUT_VECTOR_HEC_ADDRESS=0.0.0.0:9990
-      - STRIEM_OUTPUT_VECTOR_API_ADDRESS=0.0.0.0:9999
-      - STRIEM_DETECTIONS=/data/detections
-      - STRIEM_STORAGE_SCHEMA=/data/schema/1.4.0
+      # Query database (DuckDB) + parquet storage the API reads for event queries.
+      - STRIEM_DB=/data
       - STRIEM_STORAGE_PATH=/data/storage
+      # Resolved into the generated Vector config's remap file paths.
       - STRIEM_REMAPS=/data/remaps
+      # Where Vector should send OCSF events, and where the API administers rules.
+      - STRIEM_FQDN=http://detection:9000
+      - STRIEM_DETECTION_URL=http://detection:9000
+      # Downstream Vector listeners the generated config wires up.
+      - STRIEM_OUTPUT_URL=http://vector:6000
+      - STRIEM_OUTPUT_HTTP_ADDRESS=0.0.0.0:9900
+      - STRIEM_OUTPUT_HEC_ADDRESS=0.0.0.0:9990
+      - STRIEM_OUTPUT_API_ADDRESS=0.0.0.0:9999
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  detection:
+    image: striem:latest
+    command: ["usdetect"]
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    ports:
+      - "9000:9000"
+    environment:
+      - RUST_LOG=info
+      # gRPC listener: Vector event ingestion + the detection-admin API.
+      - STRIEM_INPUT_ADDRESS=0.0.0.0:9000
+      # Forward detection findings to the downstream Vector source.
+      - STRIEM_OUTPUT_URL=http://vector:6000
+      # Rules are ephemeral by default (loaded through the UI). To persist them
+      # to the data volume across restarts instead, uncomment:
+      # - STRIEM_DETECTIONS=/data/detections
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -40,17 +76,15 @@ services:
     image: timberio/vector:nightly-distroless-libc
     volumes:
       - ./extra/vector.yaml:/etc/vector/vector.yaml:ro
-      - ./data:/data:ro
-    environment:
-      - STRIEM_REMAPS=/data/remaps
+      # rw: Vector writes OCSF parquet to /data/storage and reads remaps.
+      - ./data:/data
     ports:
-      - "9000:9000"
-      - "9900:9900"
-      - "9990:9990"
-      - "9999:9999"
+      - "9900:9900"  # HTTP log ingest
+      - "9990:9990"  # Splunk HEC ingest
+      - "9999:9999"  # Vector API
     depends_on:
-      striem:
+      api:
+        condition: service_started
+      detection:
         condition: service_started
     restart: unless-stopped
-    links:
-      - striem

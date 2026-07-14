@@ -19,3 +19,6 @@ tonic.workspace = true
 [build-dependencies]
 reqwest.workspace = true
 tonic-build.workspace = true
+
+[dev-dependencies]
+tokio-stream.workspace = true

@@ -1,14 +1,11 @@
 #![allow(dead_code)]
 
-use std::{collections::BTreeMap, sync::LazyLock};
+use std::collections::BTreeMap;
 
-use serde::{Serialize, ser::SerializeMap};
-use tokio::sync::RwLock;
+use serde::Serialize;
 
-use crate::sources::{Transform, TransformType};
+use crate::graph::{Pipeline, Transform, component};
 pub mod slack;
-
-pub(crate) static SINKS: LazyLock<RwLock<Vec<Box<dyn Sink>>>> = LazyLock::new(|| RwLock::new(Vec::new()));
 
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -72,33 +69,46 @@ pub enum SinkType {
 pub trait Sink: Send + Sync {
     fn id(&self) -> String;
     fn config(&self) -> SinkType;
-    fn pre(&self) -> Option<(BTreeMap<String, Transform>, String)> {
-        None
+
+    /// Discriminator used to persist and reconstruct this sink.
+    fn typename(&self) -> String;
+
+    /// The settings needed to reconstruct this sink from storage.
+    fn settings(&self) -> serde_json::Value;
+
+    /// Transforms this sink prepends ahead of the sink component (its config's
+    /// `inputs` should reference them).
+    fn transforms(&self) -> BTreeMap<String, Transform> {
+        BTreeMap::new()
+    }
+
+    /// The Vector components this sink contributes to the graph.
+    fn pipeline(&self) -> anyhow::Result<Pipeline> {
+        let mut pipeline = Pipeline::default();
+        pipeline.sinks.insert(self.id(), component(self.config())?);
+        pipeline.transforms.extend(self.transforms());
+        Ok(pipeline)
     }
 }
 
-impl Serialize for dyn Sink {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
+pub type ExistingSink = (String, String, serde_json::Value);
 
-        let transforms = self.pre();
-
-        let len = match &transforms {
-            Some(_) => 2,
-            None => 1,
-        };
-
-        let mut map = serializer.serialize_map(Some(len))?;
-
-        if let Some((transforms, _)) = transforms {
-            map.serialize_entry("sinks", &BTreeMap::from([(self.id(), &self.config())]))?;
-            map.serialize_entry("transforms", &transforms)?;
-        } else {
-            map.serialize_entry("sinks", &BTreeMap::from([(self.id(), &self.config())]))?;
+impl TryInto<Box<dyn Sink>> for ExistingSink {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<Box<dyn Sink>, Self::Error> {
+        let (sinktype, id, config) = self;
+        match sinktype.as_str() {
+            "slack" => {
+                let settings: slack::SlackSettings =
+                    serde_json::from_value(config).map_err(|e| anyhow::anyhow!(e))?;
+                Ok(Box::new(slack::Slack {
+                    id,
+                    token: settings.token,
+                    channel: settings.channel,
+                }))
+            }
+            _ => Err(anyhow::anyhow!("Unsupported sink type: {}", sinktype)),
         }
-        map.end()
     }
 }
 
