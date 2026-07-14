@@ -1,0 +1,16 @@
+[package]
+name = "striem_detection"
+version = "0.1.0"
+edition = "2024"
+
+# Shared gRPC bindings for the detection-admin protocol. The detection service
+# (in the `striem` crate) implements the server; the API service (`striem_api`)
+# uses the client. Keeping the generated code here lets both depend on it without
+# a dependency on the binary crate.
+
+[dependencies]
+prost.workspace = true
+tonic.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true

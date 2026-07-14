@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+// Administration protocol for the StrIEM detection microservice.
+//
+// Rules are transported as JSON strings so the detection engine remains the
+// single source of truth for their shape (Sigma -> serde_json). The API service
+// is a thin proxy that forwards these payloads to/from its HTTP clients.
+package striem.detection.v1;
+
+service Detections {
+  // List all loaded rules as summary JSON objects.
+  rpc List(ListRequest) returns (ListResponse);
+  // Fetch a single rule's full JSON by id.
+  rpc Get(GetRequest) returns (RuleResponse);
+  // Upload a new rule from raw Sigma YAML.
+  rpc Create(CreateRequest) returns (CreateResponse);
+  // Enable or disable an existing rule.
+  rpc SetEnabled(SetEnabledRequest) returns (RuleResponse);
+}
+
+message ListRequest {}
+
+message ListResponse {
+  // Each entry is a JSON object: {id, title, description, enabled, level, logsource}.
+  repeated string summaries = 1;
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message RuleResponse {
+  // Full rule serialized as a JSON object.
+  string rule = 1;
+}
+
+message CreateRequest {
+  // Raw Sigma rule YAML.
+  string yaml = 1;
+}
+
+message CreateResponse {
+  string id = 1;
+}
+
+message SetEnabledRequest {
+  string id = 1;
+  bool enabled = 2;
+}

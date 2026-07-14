@@ -1,0 +1,10 @@
+target
+data
+olddata
+venv
+.git
+.github
+*.db
+**/node_modules
+ui/out
+ui/.next
