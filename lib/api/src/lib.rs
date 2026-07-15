@@ -36,9 +36,7 @@ pub(crate) type DetectionClient = DetectionsClient<tonic::transport::Channel>;
 
 #[cfg(feature = "duckdb")]
 pub(crate) type Pool = r2d2::Pool<duckdb::DuckdbConnectionManager>;
-#[cfg(all(feature = "sqlite", not(feature = "duckdb")))]
-pub(crate) type Pool = r2d2::Pool<sqlite::SqliteConnectionManager>;
-#[cfg(not(any(feature = "duckdb", feature = "sqlite")))]
+#[cfg(not(feature = "duckdb"))]
 pub(crate) type Pool = ();
 
 #[derive(Clone)]
@@ -144,13 +142,7 @@ pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
     }
 }
 
-#[cfg(all(feature = "sqlite", not(feature = "duckdb")))]
-pub(crate) fn db_pool(config: &StrIEMConfig) -> Option<Pool> {
-    unimplemented!("SQLite support is not yet implemented");
-    None
-}
-
-#[cfg(not(any(feature = "duckdb", feature = "sqlite")))]
+#[cfg(not(feature = "duckdb"))]
 pub(crate) fn db_pool(_config: &StrIEMConfig) -> Option<Pool> {
     None
 }

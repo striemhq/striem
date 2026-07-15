@@ -14,3 +14,8 @@ tonic.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
+
+# prost/tonic are used by the generated proto code in OUT_DIR, which
+# cargo-machete's source scan can't see.
+[package.metadata.cargo-machete]
+ignored = ["prost", "tonic"]
