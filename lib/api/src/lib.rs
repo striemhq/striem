@@ -1,6 +1,5 @@
 mod actions;
 mod alerts;
-mod destination;
 mod detections;
 pub mod features;
 mod graph;

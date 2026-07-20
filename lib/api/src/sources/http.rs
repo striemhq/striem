@@ -37,10 +37,11 @@ fn http_listener(ctx: &RenderCtx) -> anyhow::Result<Component> {
         .unwrap_or_else(|| DEFAULT_HTTP_ADDRESS.to_string());
 
     let vrl = [
-        r#"body, _ = string(.)"#,
+        r#"body, _ = to_string(.)"#,
         r#"if !is_null(body) {"#,
         r#"  . = parse_json(body) ?? body"#,
         r#"}"#,
+        r#"."#,
     ]
     .join("\n");
 

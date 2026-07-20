@@ -4239,6 +4239,7 @@ dependencies = [
  "erased-serde",
  "log",
  "r2d2",
+ "reqwest",
  "rmcp",
  "serde",
  "serde_json",

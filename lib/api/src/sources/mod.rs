@@ -335,6 +335,7 @@ fn http_pipeline_terminates_at_ocsf_node() {
     let ctx = RenderCtx {
         remaps_dir: "/remaps".to_string(),
         http_address: Some("0.0.0.0:8080".to_string()),
+        ..Default::default()
     };
     let pipeline = source.pipeline(&ctx).unwrap();
 
@@ -354,6 +355,7 @@ fn merged_graph_dedupes_http_listener_and_serializes() {
     let ctx = RenderCtx {
         remaps_dir: "/remaps".to_string(),
         http_address: Some("0.0.0.0:8080".to_string()),
+        ..Default::default()
     };
 
     let aws: Box<dyn Source> = (

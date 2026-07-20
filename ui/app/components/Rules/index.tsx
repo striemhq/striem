@@ -169,7 +169,7 @@ export default function RulesTab() {
     <div className="h-full flex flex-col">
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Sigma Rules</h2>
+          <h2 className="text-2xl font-semibold text-gray-900">Detections</h2>
           <p className="text-sm text-gray-500 mt-1">
             {filteredRules.length === rules.length 
               ? `${rules.length} rules`

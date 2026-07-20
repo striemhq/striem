@@ -1,23 +1,53 @@
 "use client";
 
-import { useFeatureFlags } from "@/include/features";
-
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
 }
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
-  const { hasFeature } = useFeatureFlags();
-  const hasDuckDB = true;
+interface Tab {
+  id: string;
+  label: string;
+  icon: string;
+}
 
-  const tabs = [
-    { id: "detections", label: "Sigma Rules", icon: "📋" },
-    { id: "alerts", label: "Alerts", icon: "🚨" },
-    { id: "sources", label: "Sources", icon: "🔗" },
-    { id: "storage", label: "Storage", icon: "💾" },
-    ...(hasDuckDB ? [{ id: "explore", label: "Explore", icon: "🔍" }] : []),
-  ];
+interface Section {
+  label: string;
+  tabs: Tab[];
+}
+
+const sections: Section[] = [
+  {
+    label: "Data",
+    tabs: [
+      { id: "sources", label: "Sources", icon: "🔗" },
+      { id: "destinations", label: "Destinations", icon: "🗄️" },
+      { id: "explore", label: "Explore", icon: "🔍" },
+    ],
+  },
+  {
+    label: "Alerting",
+    tabs: [
+      { id: "alerts", label: "Alerts", icon: "🚨" },
+      { id: "detections", label: "Detections", icon: "📋" },
+      { id: "notifications", label: "Notifications", icon: "🔔" },
+    ],
+  },
+];
+
+export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+  const renderTab = (tab: Tab) => (
+    <button
+      key={tab.id}
+      onClick={() => onTabChange(tab.id)}
+      className={`nav-button ${
+        activeTab === tab.id ? "nav-button-active" : "nav-button-inactive"
+      }`}
+    >
+      <span className="text-lg">{tab.icon}</span>
+      <span className="font-medium">{tab.label}</span>
+    </button>
+  );
 
   return (
     <nav className="sidebar">
@@ -25,19 +55,11 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         <h1 className="text-2xl font-semibold">StrIEM</h1>
       </div>
       <div className="sidebar-nav">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => onTabChange(tab.id)}
-            className={`nav-button ${
-              activeTab === tab.id
-                ? "nav-button-active"
-                : "nav-button-inactive"
-            }`}
-          >
-            <span className="text-lg">{tab.icon}</span>
-            <span className="font-medium">{tab.label}</span>
-          </button>
+        {sections.map((section) => (
+          <div key={section.label}>
+            <div className="sidebar-section-label">{section.label}</div>
+            {section.tabs.map(renderTab)}
+          </div>
         ))}
       </div>
     </nav>

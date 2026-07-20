@@ -73,11 +73,18 @@ services:
     restart: unless-stopped
 
   vector:
-    image: timberio/vector:nightly-distroless-libc
+    image: vector:distroless-libc
     volumes:
       - ./extra/vector.yaml:/etc/vector/vector.yaml:ro
       # rw: Vector writes OCSF parquet to /data/storage and reads remaps.
       - ./data:/data
+      # OCSF parquet schemas + remap.vrl the generated file sinks reference via
+      # ${STRIEM_SCHEMA_DIR}, which Vector interpolates at load time.
+      - ./schemas:/usr/share/striem/schemas:ro
+    environment:
+      # Versioned schema root: contains the per-category schema dirs + remap.vrl.
+      - STRIEM_SCHEMA_DIR=/usr/share/striem/schemas/parquet/ocsf/v1.8.0
+      - VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION=true
     ports:
       - "9900:9900"  # HTTP log ingest
       - "9990:9990"  # Splunk HEC ingest
@@ -88,3 +95,15 @@ services:
       detection:
         condition: service_started
     restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.4-distroless
+    environment:
+      - CLICKHOUSE_USER=test
+      - CLICKHOUSE_PASSWORD=testtest
+    ports:
+      - "8000:8000"
+      - "8123:8123"
+    volumes:
+      - ./data/clickhouse.xml:/etc/clickhouse-server/config.d/clickhouse.xml
+

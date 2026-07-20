@@ -404,6 +404,10 @@
   @apply py-6;
 }
 
+.sidebar-section-label {
+  @apply px-6 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400;
+}
+
 .nav-button {
   @apply w-full flex items-center gap-3 px-6 py-4 text-left transition-colors;
 }

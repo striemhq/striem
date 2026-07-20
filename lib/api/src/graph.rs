@@ -39,6 +39,16 @@ impl RenderCtx {
     }
 }
 
+/// A named route of an `exclusive_route` transform. Events are matched against
+/// routes in order (first match wins); each route is exposed as the output port
+/// `<transform>.<name>`.
+#[derive(Serialize, Clone)]
+pub struct Route {
+    pub name: String,
+    /// VRL boolean expression selecting events for this route.
+    pub condition: String,
+}
+
 /// A Vector `transform` component.
 #[derive(Serialize, Default, Clone)]
 pub struct Transform {
@@ -54,6 +64,9 @@ pub struct Transform {
     /// VRL condition (for `filter`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<String>,
+    /// Named routes (for `exclusive_route`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routes: Option<Vec<Route>>,
 }
 
 #[derive(Serialize, Clone, Default)]
@@ -62,6 +75,7 @@ pub enum TransformType {
     #[default]
     Remap,
     Filter,
+    ExclusiveRoute,
 }
 
 impl Transform {
@@ -88,6 +102,16 @@ impl Transform {
         Transform {
             transform_type: TransformType::Filter,
             condition: Some(condition.into()),
+            ..Default::default()
+        }
+    }
+
+    /// An `exclusive_route` transform splitting the stream into one output port
+    /// per route (first match wins).
+    pub fn exclusive_route(routes: Vec<Route>) -> Self {
+        Transform {
+            transform_type: TransformType::ExclusiveRoute,
+            routes: Some(routes),
             ..Default::default()
         }
     }
