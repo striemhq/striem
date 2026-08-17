@@ -66,6 +66,10 @@ async fn add(
     let id = uuid::Uuid::now_v7().to_string();
     let bad = |e: serde_json::Error| (axum::http::StatusCode::BAD_REQUEST, e.to_string());
 
+    // Non-fatal setup warning (e.g. ClickHouse table creation) surfaced to the
+    // caller without blocking the destination from being saved.
+    let mut warning: Option<String> = None;
+
     let sink: Box<dyn Sink> = match destinationtype {
         DestinationType::LocalFile => Box::new(local_file::LocalFile {
             id,
@@ -80,12 +84,13 @@ async fn add(
                 id,
                 settings: serde_json::from_value(config).map_err(bad)?,
             };
-            // Create the destination table over HTTP before persisting, so an
-            // unreachable/misconfigured endpoint surfaces to the user now
-            // instead of silently failing inside Vector.
-            sink.create_tables()
-                .await
-                .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+            // Best-effort: create the destination table over HTTP. Don't block
+            // saving the destination if ClickHouse is unreachable — surface a
+            // warning instead so the sink can still be persisted.
+            if let Err(e) = sink.create_tables().await {
+                log::warn!("ClickHouse table creation failed (destination still saved): {}", e);
+                warning = Some(e.to_string());
+            }
             Box::new(sink)
         }
     };
@@ -103,7 +108,11 @@ async fn add(
     }
 
     let id = crate::sinks::add(&state, sink).await?;
-    Ok(axum::Json(json!({ "id": id, "sinktype": sinktype })))
+    let mut response = json!({ "id": id, "sinktype": sinktype });
+    if let Some(warning) = warning {
+        response["warning"] = json!(warning);
+    }
+    Ok(axum::Json(response))
 }
 
 pub fn create_router() -> Router<ApiState> {

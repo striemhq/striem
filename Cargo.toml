@@ -1,8 +1,14 @@
+cargo-features = ["codegen-backend"]
+
+[profile.dev]
+codegen-backend = "cranelift"
+
 [workspace]
 resolver = "3"
 default-members = ["striem"]
 members = [
   "striem",
+  "rsigma-detection",
   "lib/*"]
 
 [workspace.package]

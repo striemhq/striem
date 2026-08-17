@@ -1,12 +1,17 @@
 # StrIEM runs as three long-lived services plus a one-shot setup:
 #
 #   vector      normalizes incoming logs to OCSF and fans events out
-#   detection   receives OCSF events over gRPC, runs Sigma, hosts the rule-admin API
-#   api         serves the HTTP/UI, generates Vector's config, proxies rule admin
+#   detection   receives OCSF events over gRPC, runs Sigma (rsigma engine),
+#               emits OCSF Detection Findings back to Vector
+#   api         serves the HTTP/UI, generates Vector's config
 #
 # Data flow:
 #   vector --(OCSF, grpc)--> detection --(findings, grpc)--> vector --> storage
-#   api  <--(admin, grpc)--> detection ;  vector <--(config, http)-- api
+#   vector <--(config, http)-- api
+#
+# The detection service runs `rsigma-detection`. Its rules live on disk
+# (RSIGMA_DETECTION_RULES), and it hosts the detection-admin gRPC API over those
+# files, so the api/UI rule proxy (STRIEM_DETECTION_URL) works against it.
 #
 # `api` and `detection` share one image (built once); build it with
 #   docker compose build
@@ -34,15 +39,11 @@ services:
       - RUST_LOG=info
       - STRIEM_API_ENABLED=1
       - STRIEM_API_ADDRESS=0.0.0.0:8080
-      # Query database (DuckDB) + parquet storage the API reads for event queries.
       - STRIEM_DB=/data
       - STRIEM_STORAGE_PATH=/data/storage
-      # Resolved into the generated Vector config's remap file paths.
       - STRIEM_REMAPS=/data/remaps
-      # Where Vector should send OCSF events, and where the API administers rules.
       - STRIEM_FQDN=http://detection:9000
       - STRIEM_DETECTION_URL=http://detection:9000
-      # Downstream Vector listeners the generated config wires up.
       - STRIEM_OUTPUT_URL=http://vector:6000
       - STRIEM_OUTPUT_HTTP_ADDRESS=0.0.0.0:9900
       - STRIEM_OUTPUT_HEC_ADDRESS=0.0.0.0:9990
@@ -53,21 +54,20 @@ services:
 
   detection:
     image: striem:latest
-    command: ["usdetect"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["sh", "-c", "mkdir -p /data/detections && exec rsigma-detection"]
     depends_on:
       setup:
         condition: service_completed_successfully
     ports:
       - "9000:9000"
     environment:
-      - RUST_LOG=info
-      # gRPC listener: Vector event ingestion + the detection-admin API.
-      - STRIEM_INPUT_ADDRESS=0.0.0.0:9000
-      # Forward detection findings to the downstream Vector source.
-      - STRIEM_OUTPUT_URL=http://vector:6000
-      # Rules are ephemeral by default (loaded through the UI). To persist them
-      # to the data volume across restarts instead, uncomment:
-      # - STRIEM_DETECTIONS=/data/detections
+      - RUST_LOG=debug
+      - RSIGMA_DETECTION_INPUT=0.0.0.0:9000
+      - RSIGMA_DETECTION_OUTPUT=http://vector:6000
+      - RSIGMA_DETECTION_RULES=/data/detections
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -76,13 +76,9 @@ services:
     image: vector:distroless-libc
     volumes:
       - ./extra/vector.yaml:/etc/vector/vector.yaml:ro
-      # rw: Vector writes OCSF parquet to /data/storage and reads remaps.
       - ./data:/data
-      # OCSF parquet schemas + remap.vrl the generated file sinks reference via
-      # ${STRIEM_SCHEMA_DIR}, which Vector interpolates at load time.
       - ./schemas:/usr/share/striem/schemas:ro
     environment:
-      # Versioned schema root: contains the per-category schema dirs + remap.vrl.
       - STRIEM_SCHEMA_DIR=/usr/share/striem/schemas/parquet/ocsf/v1.8.0
       - VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION=true
     ports:

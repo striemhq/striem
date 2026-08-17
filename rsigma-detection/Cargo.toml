@@ -1,0 +1,46 @@
+[package]
+name = "rsigma-detection"
+version = "0.1.0"
+edition = "2024"
+license = "MPLv2"
+description = "A StrIEM detection service variant powered by the rsigma engine: Vector-fed events, logsource-conflict pruning, OCSF Detection Findings back to Vector"
+
+# StrIEM's own `detection` service evaluates events through `sigmars`. This
+# sub-project is a drop-in alternative that reuses StrIEM's Vector ingest/egress
+# (`striem_vector`) and event model (`striem_common`) but swaps the engine for
+# rsigma's runtime, taking its conflict-based `logsource_compatible` pruning
+# path instead of a strict logsource subset filter.
+
+[[bin]]
+name = "rsigma-detection"
+path = "src/bin/rsigma-detection.rs"
+
+[dependencies]
+# StrIEM building blocks (reused as-is).
+striem_common = { path = "../lib/common" }
+striem_vector = { path = "../lib/vector" }
+# Detection-admin gRPC protocol (List/Get/Create/SetEnabled), served alongside
+# the Vector ingest so the api/UI rule proxy works against this engine too.
+striem_detection = { path = "../lib/detection" }
+
+# The rsigma engine, pinned to the tag matching these crate versions. For
+# local development against a live `../rsigma` checkout, `.cargo/config.toml`
+# in the workspace root overrides these with a `paths` entry; that override is
+# excluded from the Docker build (see `.dockerignore`), so the image builds
+# from git and is self-contained.
+rsigma-parser = { git = "https://github.com/timescale/rsigma.git", tag = "v0.19.0" }
+rsigma-eval = { git = "https://github.com/timescale/rsigma.git", tag = "v0.19.0", features = ["parallel"] }
+rsigma-runtime = { git = "https://github.com/timescale/rsigma.git", tag = "v0.19.0" }
+
+anyhow.workspace = true
+backoff.workspace = true
+chrono.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
