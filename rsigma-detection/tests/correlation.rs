@@ -1,11 +1,11 @@
-//! Correlation rules flow through the same handler and emit OCSF findings.
+//! Correlation rules go through the same handler and make OCSF findings.
 //!
-//! An `event_count` correlation (≥2 failed logins per user within 300s) is
-//! loaded alongside its base rule. Two matching events are pushed as one batch;
-//! the handler must emit a correlation Detection Finding (in addition to the
-//! base detections), proving the engine auto-selects the `CorrelationEngine`
-//! variant, accumulates state across the batch, and that `result_to_ocsf`
-//! renders the correlation body.
+//! The test loads an `event_count` correlation (2 or more failed logins for one
+//! user in 300s) with its base rule. It sends two matching events as one batch.
+//! The handler must make a correlation Detection Finding, and also the base
+//! detections. Thus the test shows three things: the engine selects the
+//! `CorrelationEngine` variant automatically, it collects state across the
+//! batch, and `result_to_ocsf` makes the correlation body.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,7 +66,7 @@ fn processor(dir: &std::path::Path) -> Arc<LogProcessor> {
 
 fn failed_login(user: &str, ts: &str) -> Event {
     let mut metadata = HashMap::new();
-    // Logsource lives in metadata (StrIEM convention), not the log body.
+    // The logsource is in the metadata (StrIEM convention), not in the log body.
     metadata.insert(
         "logsource".to_string(),
         serde_json::json!({ "product": "linux" }),
@@ -80,7 +80,7 @@ fn failed_login(user: &str, ts: &str) -> Event {
         data: serde_json::json!({
             "EventType": "failed_login",
             "User": user,
-            // Correlation reads the event time from the log body.
+            // The correlation reads the event time from the log body.
             "@timestamp": ts,
         }),
         metadata,
@@ -100,7 +100,7 @@ async fn event_count_correlation_emits_ocsf_finding() {
     let mut handler = DetectionHandler::new(src_rx, dest_tx, processor, 64, sys_rx);
     let worker = tokio::spawn(async move { handler.run().await });
 
-    // Two failed logins for the same user, one second apart, within the window.
+    // Two failed logins for the same user, one second apart, in the window.
     let batch = vec![
         failed_login("admin", "2026-01-02T03:04:05Z"),
         failed_login("admin", "2026-01-02T03:04:06Z"),
@@ -128,7 +128,7 @@ async fn event_count_correlation_emits_ocsf_finding() {
             .unwrap()
             >= 2.0
     );
-    // group_key surfaces the User the window fired on.
+    // group_key shows the User that the window fired on.
     let group = &correlation.data["finding_info"]["data"]["group_key"][0];
     assert_eq!(group["name"], "User");
     assert_eq!(group["value"], "admin");

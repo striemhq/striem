@@ -1,21 +1,22 @@
 //! OCSF Detection Finding construction.
 //!
-//! Turns an rsigma [`EvaluationResult`] (detection or correlation) into an OCSF
-//! `Detection Finding` event (class_uid 2004), mirroring the shape StrIEM's
-//! `detection` service emits. The input differs from StrIEM's: rsigma carries
-//! the matched-rule metadata on the flattened [`RuleHeader`]
-//! (`rule_title`/`rule_id`/`level`/`tags`) plus the match body, rather than a
-//! whole `SigmaRule`, so the mapping reads from the result header here.
+//! This module changes an rsigma [`EvaluationResult`] (detection or correlation)
+//! into an OCSF `Detection Finding` event (class_uid 2004). The shape is the
+//! same as the one that StrIEM's `detection` service makes. The input is not the
+//! same as StrIEM's. rsigma carries the matched-rule metadata on the flat
+//! [`RuleHeader`] (`rule_title`, `rule_id`, `level`, `tags`) and the match body.
+//! It does not carry a full `SigmaRule`. Thus this module reads from the result
+//! header.
 
 use rsigma_eval::{EvaluationResult, ResultBody, RuleHeader};
 use rsigma_parser::Level;
 use serde_json::{Value, json};
 
-/// Build the OCSF Detection Finding object for a single evaluation result.
+/// Makes the OCSF Detection Finding object for one evaluation result.
 ///
-/// `finding_uid` is the finding's own `metadata.uid`; `correlation_uid` links
-/// it back to the triggering event; `time_millis` is the event time in epoch
-/// milliseconds.
+/// `finding_uid` is the finding's own `metadata.uid`. `correlation_uid` links
+/// the finding to the event that caused it. `time_millis` is the event time in
+/// epoch milliseconds.
 pub fn result_to_ocsf(
     result: &EvaluationResult,
     finding_uid: &str,
@@ -28,8 +29,8 @@ pub fn result_to_ocsf(
     ocsf["metadata"]["uid"] = json!(finding_uid);
     ocsf["metadata"]["correlation_uid"] = json!(correlation_uid);
 
-    // Surface the concrete match evidence so downstream consumers can see why
-    // the rule fired without re-running it.
+    // Add the match evidence. Thus a downstream consumer can see why the rule
+    // fired, and does not run the rule again.
     match &result.body {
         ResultBody::Detection(d) => {
             ocsf["finding_info"]["kind"] = json!("detection");
@@ -64,7 +65,8 @@ pub fn result_to_ocsf(
     ocsf
 }
 
-/// The shared OCSF Detection Finding skeleton, populated from rule metadata.
+/// The shared OCSF Detection Finding base. The function fills it from the rule
+/// metadata.
 fn base_finding(header: &RuleHeader) -> Value {
     let mut ocsf = json!({
         "category_uid": 2,
@@ -109,7 +111,7 @@ fn base_finding(header: &RuleHeader) -> Value {
     ocsf
 }
 
-/// Map an rsigma [`Level`] to the OCSF `severity` / `severity_id` pair.
+/// Changes an rsigma [`Level`] to the OCSF `severity` and `severity_id` pair.
 fn severity_for(level: Level) -> (&'static str, u8) {
     match level {
         Level::Informational => ("Informational", 1),
@@ -120,11 +122,11 @@ fn severity_for(level: Level) -> (&'static str, u8) {
     }
 }
 
-/// Build the OCSF `attacks` array from Sigma `attack.*` tags.
+/// Makes the OCSF `attacks` array from the Sigma `attack.*` tags.
 ///
-/// `attack.t<id>` tags become technique/sub-technique refs; recognised
-/// `attack.<tactic>` tags become tactic refs. Returns `None` when no ATT&CK
-/// tags are present. Ported from StrIEM's `get_ocsf_attacks`.
+/// An `attack.t<id>` tag becomes a technique or sub-technique ref. A known
+/// `attack.<tactic>` tag becomes a tactic ref. This function gives `None` when
+/// there are no ATT&CK tags. It comes from StrIEM's `get_ocsf_attacks`.
 fn attacks_from_tags(tags: &[String]) -> Option<Vec<Value>> {
     let (techniques, other): (Vec<&String>, Vec<&String>) =
         tags.iter().partition(|tag| tag.starts_with("attack.t"));
@@ -154,7 +156,7 @@ fn attacks_from_tags(tags: &[String]) -> Option<Vec<Value>> {
     }
 }
 
-/// Map a Sigma ATT&CK tactic slug to its OCSF tactic ref.
+/// Changes a Sigma ATT&CK tactic slug to its OCSF tactic ref.
 fn tactic_for(slug: &str) -> Option<Value> {
     let (uid, name) = match slug {
         "initial-access" => ("TA0001", "Initial Access"),
@@ -241,7 +243,7 @@ mod tests {
         let attacks = ocsf["finding_info"]["attacks"]
             .as_array()
             .expect("attacks array");
-        // One sub-technique (T1059.001) and one tactic (Execution / TA0002).
+        // One sub-technique (T1059.001) and one tactic (Execution, TA0002).
         assert_eq!(attacks.len(), 2);
         assert_eq!(attacks[0]["sub_technique"]["uid"], "T1059.001");
         assert_eq!(attacks[1]["tactic"]["uid"], "TA0002");

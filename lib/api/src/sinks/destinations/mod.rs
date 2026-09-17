@@ -1,6 +1,6 @@
-//! Destination sinks: archive the normalized `ocsf-*` event stream to Local
-//! Files (parquet), AWS S3, or Clickhouse. Mirrors the `sources` resource shape
-//! (list / get / delete / add-by-type).
+//! Destination sinks. They keep the normalized `ocsf-*` event stream. They
+//! write it to Local Files (parquet), AWS S3, or Clickhouse. These sinks have
+//! the same resource shape as the `sources` (list / get / delete / add-by-type).
 
 pub mod aws_s3;
 pub mod clickhouse;
@@ -66,8 +66,9 @@ async fn add(
     let id = uuid::Uuid::now_v7().to_string();
     let bad = |e: serde_json::Error| (axum::http::StatusCode::BAD_REQUEST, e.to_string());
 
-    // Non-fatal setup warning (e.g. ClickHouse table creation) surfaced to the
-    // caller without blocking the destination from being saved.
+    // A setup warning that is not fatal (for example, ClickHouse table
+    // creation). The handler gives this warning to the caller. The warning does
+    // not prevent the save of the destination.
     let mut warning: Option<String> = None;
 
     let sink: Box<dyn Sink> = match destinationtype {
@@ -84,9 +85,10 @@ async fn add(
                 id,
                 settings: serde_json::from_value(config).map_err(bad)?,
             };
-            // Best-effort: create the destination table over HTTP. Don't block
-            // saving the destination if ClickHouse is unreachable — surface a
-            // warning instead so the sink can still be persisted.
+            // Try to make the destination table over HTTP. If ClickHouse is not
+            // available, do not prevent the save of the destination. Give a
+            // warning in place of an error, so the service can still save the
+            // sink.
             if let Err(e) = sink.create_tables().await {
                 log::warn!("ClickHouse table creation failed (destination still saved): {}", e);
                 warning = Some(e.to_string());
@@ -96,8 +98,9 @@ async fn add(
     };
 
     let sinktype = sink.typename();
-    // The Local Files destination owns the parquet path the query engine reads,
-    // so mirror it into storage config (like the old /destination endpoint).
+    // The Local Files destination owns the parquet path that the query engine
+    // reads. Thus copy this path into the storage configuration (the same as the
+    // old /destination endpoint).
     if let Some(path) = local_file::storage_path(sink.as_ref()) {
         let _ = state.sys.send(striem_common::SysMessage::Update(Box::new(
             json!({ "storage": { "path": path } })

@@ -4,15 +4,16 @@ use axum::{Router, extract::State, routing::get};
 use striem_config::StrIEMConfig;
 use toml::toml;
 
-/// The `${STRIEM_REMAPS}` env var isn't interpolated by Vector's HTTP config
-/// provider, so we resolve it here and fall back to the literal placeholder.
+/// Vector's HTTP config provider does not replace the `${STRIEM_REMAPS}`
+/// environment variable. Thus this function reads it here. If it is not set,
+/// this function gives back the variable text.
 fn remaps_dir() -> String {
     std::env::var("STRIEM_REMAPS").unwrap_or_else(|_| "${STRIEM_REMAPS}".to_string())
 }
 
-/// The static scaffolding every generated config starts from: a stdin seed so
-/// the `ocsf-*` wildcard always has a producer, the `alerts` filter, and the
-/// `sink-striem` forwarder.
+/// The fixed base for every generated config. It has a stdin seed, so the
+/// `ocsf-*` wildcard always has a producer. It also has the `alerts` filter and
+/// the `sink-striem` forwarder.
 fn boilerplate(config: &StrIEMConfig) -> VectorConfig {
     let fqdn = config.fqdn.clone().unwrap_or_else(|| config.input.url());
 
@@ -129,12 +130,30 @@ fn boilerplate(config: &StrIEMConfig) -> VectorConfig {
         }),
     );
 
+    // Vector's own metrics. The `internal_metrics` source collects them and the
+    // `prometheus_exporter` sink shows them at :9100/metrics. The API dashboard
+    // reads this endpoint (STRIEM_VECTOR_METRICS_URL).
+    cfg.sources.insert(
+        "internal-metrics".to_string(),
+        Component::Table(toml! {
+            type = "internal_metrics"
+        }),
+    );
+    cfg.sinks.insert(
+        "sink-metrics".to_string(),
+        Component::Table(toml! {
+            type = "prometheus_exporter"
+            inputs = ["internal-metrics"]
+            address = "0.0.0.0:9100"
+        }),
+    );
+
     cfg
 }
 
-/// Apply the pieces derived from the configured Vector destination: the API
-/// endpoint, the primary `vector` source, and optional HEC ingest. Returns the
-/// HTTP ingest address (if any) for use by HTTP sources.
+/// Adds the parts that come from the configured Vector destination: the API
+/// endpoint, the primary `vector` source, and the optional HEC input. Gives
+/// back the HTTP input address, if there is one, for the HTTP sources to use.
 fn apply_destination(cfg: &mut VectorConfig, config: &StrIEMConfig) -> Option<String> {
     let Some(vector) = &config.output else {
         return None;

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "striem.detection.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "detection") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "striem.componentSelectorLabels" (dict "root" . "component" "detection") | nindent 4 }}
+  ports:
+    - name: grpc
+      port: {{ .Values.detection.grpcPort }}
+      targetPort: grpc
+    - name: metrics
+      port: {{ .Values.detection.metricsPort }}
+      targetPort: metrics

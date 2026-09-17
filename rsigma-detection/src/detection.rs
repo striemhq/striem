@@ -1,17 +1,18 @@
-//! The detection worker: ingested events → rsigma engine → OCSF findings.
+//! The detection worker: input events → rsigma engine → OCSF findings.
 //!
-//! Mirrors StrIEM's `DetectionHandler`, but evaluates through rsigma's
-//! [`RuntimeEngine`](rsigma_runtime::RuntimeEngine) (behind a
-//! [`LogProcessor`](rsigma_runtime::LogProcessor) for atomic hot-reload) with
-//! its [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) driving the
+//! This worker is the same as StrIEM's `DetectionHandler`. But it evaluates
+//! through rsigma's [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). A
+//! [`LogProcessor`](rsigma_runtime::LogProcessor) holds the engine for an atomic
+//! hot-reload. The engine's
+//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) drives the
 //! `logsource_compatible` conflict-pruning path.
 //!
-//! Each event is presented to the engine as a [`LogsourceEvent`]: the log body
-//! (`Event.data`) supplies everything the rules match on, while the logsource —
-//! which StrIEM carries in `Event.metadata["logsource"]`, *not* in the body —
-//! is exposed only to the extractor. Every matched rule becomes an OCSF
-//! Detection Finding, correlated back to the triggering event, and is broadcast
-//! to the Vector egress client.
+//! The worker gives each event to the engine as a [`LogsourceEvent`]. The log
+//! body (`Event.data`) gives all the values that the rules match on. StrIEM
+//! carries the logsource in `Event.metadata["logsource"]`, *not* in the body.
+//! The worker shows the logsource only to the extractor. Each matched rule
+//! becomes an OCSF Detection Finding. The finding links back to the event that
+//! caused it. The worker sends it to the Vector output client.
 
 use std::sync::Arc;
 
@@ -26,11 +27,12 @@ use crate::logsource_event::{LogsourceEvent, logsource_from_metadata};
 use crate::ocsf::result_to_ocsf;
 use tokio::sync::{broadcast, mpsc};
 
-/// Background task turning ingested event batches into OCSF findings.
+/// The background task that changes batches of input events into OCSF findings.
 pub struct DetectionHandler {
-    /// Raw ingested events from the Vector server (single-consumer).
+    /// The raw events from the Vector server (one consumer).
     src: mpsc::Receiver<Vec<Event>>,
-    /// Findings fanned out to downstream sinks (the Vector egress client).
+    /// The findings. The worker sends them to the downstream sinks (the Vector
+    /// output client).
     dest: broadcast::Sender<Arc<Vec<Event>>>,
     processor: Arc<LogProcessor>,
     batch_size: usize,
@@ -54,8 +56,8 @@ impl DetectionHandler {
         }
     }
 
-    /// Main loop with graceful shutdown. A failure processing one batch is
-    /// logged and does not stop the worker.
+    /// The main loop. It supports a clean shutdown. The worker logs a failure
+    /// for one batch, but it does not stop.
     pub async fn run(&mut self) {
         loop {
             tokio::select! {
@@ -85,18 +87,20 @@ impl DetectionHandler {
         }
     }
 
-    /// Evaluate a batch of ingested events and emit any findings.
+    /// Evaluates a batch of input events and makes the findings.
     fn apply_batch(&self, events: Vec<Event>) {
+        striem_telemetry::metrics().incr_events("ingested", events.len() as u64);
         for chunk in events.chunks(self.batch_size) {
-            // The values the rules match against. For events StrIEM already
-            // normalized to OCSF (metadata.ocsf set) with a `raw_data` string,
-            // match the original vendor log so vendor-shaped Sigma rules still
-            // fire post-normalization. Owned so the borrowed `LogsourceEvent`s
-            // below can reference them for the whole batch.
+            // The values that the rules match against. StrIEM can normalize an
+            // event to OCSF (metadata.ocsf set) and keep a `raw_data` string.
+            // For such an event, match the original vendor log. Thus a
+            // vendor-shaped Sigma rule still fires after normalization. These
+            // values are owned. Thus the `LogsourceEvent`s below can point to
+            // them for the full batch.
             let payloads: Vec<Value> = chunk.iter().map(payload_value).collect();
 
-            // Pair each payload with the logsource resolved from its metadata,
-            // exposed to the extractor (and nothing else) via LogsourceEvent.
+            // Join each payload with the logsource from its metadata. The
+            // LogsourceEvent shows this logsource only to the extractor.
             let sigma_events: Vec<LogsourceEvent> = chunk
                 .iter()
                 .zip(&payloads)
@@ -106,10 +110,10 @@ impl DetectionHandler {
                 .collect();
             let refs: Vec<&LogsourceEvent> = sigma_events.iter().collect();
 
-            // Evaluate through the runtime engine (detection + correlation),
-            // holding the engine lock only for the batch. `engine_snapshot`
-            // keeps hot-reload atomic: a concurrent reload swaps the Arc, and
-            // this batch finishes against the engine it already loaded.
+            // Evaluate through the runtime engine (detection and correlation).
+            // Hold the engine lock only for the batch. `engine_snapshot` keeps
+            // the hot-reload atomic. A reload at the same time swaps the Arc.
+            // This batch finishes with the engine that it already loaded.
             let results = {
                 let guard = self.processor.engine_snapshot();
                 let mut engine = guard.lock();
@@ -133,13 +137,14 @@ impl DetectionHandler {
                     let mut finding = Event {
                         id: finding_id,
                         data,
-                        // Carry the source event's Vector metadata so the egress
-                        // client re-attaches source_type/timestamps downstream.
+                        // Keep the source event's Vector metadata. Thus the
+                        // output client adds the source_type and the timestamps
+                        // again downstream.
                         metadata: event.metadata.clone(),
                     };
-                    // Keep the finding's own uid on the wire metadata too, so a
-                    // Vector transform can key on it without descending into
-                    // the OCSF body.
+                    // Keep the finding's own uid on the wire metadata too. Thus a
+                    // Vector transform can use it without a read of the OCSF
+                    // body.
                     finding
                         .metadata
                         .insert("uid".to_string(), finding_id.to_string().into());
@@ -152,8 +157,9 @@ impl DetectionHandler {
             }
 
             debug!("emitting {} OCSF finding(s)", findings.len());
-            // A send error means no egress subscriber is attached; not fatal
-            // (findings remain observable via logs).
+            striem_telemetry::metrics().incr_events("findings", findings.len() as u64);
+            // A send error means there is no output subscriber. This is not
+            // fatal. You can still see the findings in the logs.
             if let Err(e) = self.dest.send(Arc::new(findings)) {
                 error!("no active finding subscriber: {e}");
             }
@@ -161,7 +167,7 @@ impl DetectionHandler {
     }
 }
 
-/// The JSON value an event is evaluated against.
+/// The JSON value that the engine evaluates an event against.
 fn payload_value(event: &Event) -> Value {
     if event.metadata.contains_key("ocsf")
         && let Some(Value::String(raw)) = event.data.get("raw_data")
@@ -172,8 +178,9 @@ fn payload_value(event: &Event) -> Value {
     event.data.clone()
 }
 
-/// Correlation id linking a finding back to its triggering event: the OCSF
-/// `metadata.uid` on the source event if present, else the event's own id.
+/// The correlation id that links a finding to the event that caused it. It is
+/// the OCSF `metadata.uid` on the source event if there is one. If not, it is
+/// the event's own id.
 fn correlation_uid(event: &Event) -> String {
     event
         .data
@@ -184,8 +191,8 @@ fn correlation_uid(event: &Event) -> String {
         .unwrap_or_else(|| event.id.to_string())
 }
 
-/// The event time in epoch millis: Vector's `ingest_timestamp` when present,
-/// otherwise now.
+/// The event time in epoch milliseconds. It is Vector's `ingest_timestamp` if
+/// there is one. If not, it is the current time.
 fn event_time_millis(event: &Event) -> i64 {
     event
         .metadata

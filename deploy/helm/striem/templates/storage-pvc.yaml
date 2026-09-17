@@ -1,0 +1,17 @@
+{{- if .Values.storage.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "striem.fullname" . }}-storage
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "storage") | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.storage.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.persistence.size }}
+  {{- if .Values.storage.persistence.storageClass }}
+  storageClassName: {{ .Values.storage.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

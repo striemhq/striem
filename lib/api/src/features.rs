@@ -1,7 +1,7 @@
-//! Feature flag middleware for API responses.
+//! Feature-flag middleware for the API responses.
 //!
-//! Adds X-Feature-Flag header to all responses to communicate
-//! enabled features to the frontend.
+//! This middleware adds an X-Feature-Flag header to all the responses. The
+//! header tells the frontend which features are on.
 
 use axum::{
     extract::{Request, State},
@@ -11,7 +11,7 @@ use axum::{
 
 use crate::ApiState;
 
-/// Middleware to add feature flags to response headers.
+/// The middleware that adds the feature flags to the response headers.
 ///
 /// # Usage
 /// ```no_run

@@ -1,4 +1,5 @@
-//! `rsigma-detection` — StrIEM's Vector-fed detection service, rsigma-powered.
+//! `rsigma-detection` — StrIEM's detection service that Vector feeds. rsigma is
+//! the engine.
 //!
 //! Usage:
 //!   rsigma-detection --rules <DIR> [--input <ADDR>] [--output <URL>]
@@ -12,7 +13,7 @@
 //!       --output http://vector:6001 \
 //!       --event-logsource product=windows
 //!
-//! Each flag has an environment-variable fallback (`RSIGMA_DETECTION_*`).
+//! Each flag also has an environment variable (`RSIGMA_DETECTION_*`).
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -25,8 +26,6 @@ use striem_common::SysMessage;
 use tokio::sync::broadcast;
 
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     let config = match parse_config() {
         Ok(cfg) => cfg,
         Err(e) => {
@@ -47,6 +46,21 @@ fn main() -> ExitCode {
     };
 
     runtime.block_on(async move {
+        // Starts logs, traces (OTLP when configured), and the metrics registry.
+        striem_telemetry::init("detection");
+
+        // Shows the metrics at a small HTTP server, because the detection
+        // service uses only gRPC. The API dashboard reads this endpoint.
+        let metrics_addr: std::net::SocketAddr = std::env::var("RSIGMA_DETECTION_METRICS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| ([0, 0, 0, 0], 9101).into());
+        tokio::spawn(async move {
+            if let Err(e) = striem_telemetry::serve_metrics(metrics_addr).await {
+                error!("metrics server failed: {e}");
+            }
+        });
+
         let (sys_tx, _sys_rx) = broadcast::channel::<SysMessage>(16);
 
         let service = match DetectionService::new(config, sys_tx.clone()) {
@@ -57,7 +71,7 @@ fn main() -> ExitCode {
             }
         };
 
-        // Broadcast Shutdown on Ctrl-C / SIGTERM so every task drains cleanly.
+        // Send Shutdown on Ctrl-C or SIGTERM. Thus every task stops cleanly.
         let shutdown_tx = sys_tx.clone();
         tokio::spawn(async move {
             wait_for_signal().await;
@@ -78,7 +92,7 @@ fn main() -> ExitCode {
     })
 }
 
-/// Block until an OS shutdown signal (SIGINT, or SIGTERM on Unix).
+/// Waits for an OS shutdown signal (SIGINT, or SIGTERM on Unix).
 async fn wait_for_signal() {
     #[cfg(unix)]
     {
@@ -115,7 +129,8 @@ Options:
 Environment fallbacks: RSIGMA_DETECTION_RULES, _INPUT, _OUTPUT, _BATCH_SIZE,
 _LOGSOURCE_FIELD_MAP, _EVENT_LOGSOURCE.";
 
-/// Parse CLI flags with `RSIGMA_DETECTION_*` environment fallbacks.
+/// Parses the CLI flags. Each flag also reads a `RSIGMA_DETECTION_*` environment
+/// variable.
 fn parse_config() -> Result<Config, String> {
     let mut rules: Option<String> = std::env::var("RSIGMA_DETECTION_RULES").ok();
     let mut input: Option<String> = std::env::var("RSIGMA_DETECTION_INPUT").ok();

@@ -1,5 +1,6 @@
-//! Notification sinks: deliver detection findings (the `alerts` stream) to
-//! Slack, Email, or a generic Webhook. Same resource shape as destinations.
+//! Notification sinks. They send detection findings (the `alerts` stream) to
+//! Slack, Email, or a general Webhook. They have the same resource shape as the
+//! destinations.
 
 pub mod email;
 pub mod slack;

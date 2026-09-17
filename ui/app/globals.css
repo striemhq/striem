@@ -7,8 +7,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Only applies before the theme script sets data-theme (avoids a flash). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
@@ -22,3 +23,7 @@ body {
 
 /* Import component styles after Tailwind base */
 @import "./components.css";
+
+/* Import theme palettes (light / dark / glitter) after everything else, so the
+   per-theme utility remaps win. */
+@import "./theme.css";

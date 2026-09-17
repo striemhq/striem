@@ -1,15 +1,15 @@
 //! Core application orchestration module.
 //!
-//! The `App` runs StrIEM's two services in a single process and keeps their
-//! configuration in sync:
-//! - the **API service** (`striem_api`), which manages configuration and proxies
-//!   detection-rule administration to the detection service over gRPC;
-//! - the **detection microservice** (`crate::detection::DetectionService`), which
-//!   listens for Vector events, runs the Sigma engine, forwards findings
-//!   downstream, and hosts the detection-admin gRPC API.
+//! The `App` runs StrIEM's two services in one process. It keeps their
+//! configuration in agreement:
+//! - the **API service** (`striem_api`). It manages the configuration. It also
+//!   sends detection-rule administration to the detection service over gRPC.
+//! - the **detection microservice** (`crate::detection::DetectionService`). It
+//!   listens for Vector events. It runs the Sigma engine. It forwards findings
+//!   downstream. It also hosts the detection-admin gRPC API.
 //!
-//! Split deployments run these as separate binaries (`striem_api` and
-//! `usdetect`); this module is the co-located convenience path.
+//! A split deployment runs these as separate binaries (`striem_api` and
+//! `usdetect`). This module runs the two services together.
 //!
 //! Event flow:
 //! Vector Pipeline → DetectionService(VectorServer → DetectionHandler) → findings
@@ -31,15 +31,17 @@ use striem_api as api;
 
 use crate::detection::DetectionService;
 
-/// Top-level coordinator for the co-located API and detection services.
+/// The top-level coordinator for the API and detection services that run
+/// together.
 pub struct App {
     pub config: Arc<ArcSwap<StrIEMConfig>>,
-    /// System broadcast channel (shutdown / config reload) shared by subsystems.
+    /// The system broadcast channel (shutdown and config reload). The subsystems
+    /// share it.
     sys: broadcast::Sender<SysMessage>,
 }
 
 impl App {
-    /// Initialize the application with configuration.
+    /// Starts the application with the configuration.
     pub async fn new(config: StrIEMConfig) -> Result<Self> {
         let sys = broadcast::channel::<SysMessage>(1).0;
         let config = Arc::new(ArcSwap::from_pointee(config));
@@ -52,8 +54,8 @@ impl App {
 
         let config = self.config.load();
 
-        // The API service manages configuration and proxies rule administration
-        // to the detection service over gRPC.
+        // The API service manages the configuration. It also sends the rule
+        // administration to the detection service over gRPC.
         if config.api.enabled {
             info!("... initializing API server");
             let sys = self.sys.clone();
@@ -63,8 +65,8 @@ impl App {
             });
         }
 
-        // The detection service owns event ingestion, the Sigma engine, and the
-        // detection-admin API. It blocks until shutdown.
+        // The detection service owns the event input, the Sigma engine, and the
+        // detection-admin API. It runs until shutdown.
         info!("... starting detection service on {}", config.input.url());
         let service = DetectionService::new(self.config.clone(), self.sys.clone()).await?;
         service.run().await?;
@@ -89,7 +91,8 @@ impl App {
                     }
                     Ok(SysMessage::Update(updated)) => {
                         info!("updating configuration...");
-                        // Apply updates to local config file and in-memory config
+                        // Write the changes to the local config file and the
+                        // in-memory config.
                         let mut current = Self::get_local_config().await;
                         for (k, v) in updated.iter() {
                             current.insert(k.clone(), v.clone());

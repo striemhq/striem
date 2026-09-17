@@ -1,4 +1,4 @@
-//! AWS S3 destination — archives the OCSF event stream to an S3 bucket.
+//! AWS S3 destination. It keeps the OCSF event stream in an S3 bucket.
 
 use serde::{Deserialize, Serialize};
 
@@ -39,8 +39,9 @@ impl Sink for AwsS3 {
     }
 
     fn config(&self) -> SinkType {
-        // Static credentials only when both are provided; otherwise Vector uses
-        // the ambient AWS credential chain (IAM role, env, etc.).
+        // Use fixed credentials only when you give both values. If not, Vector
+        // uses the default AWS credential chain (IAM role, environment, and
+        // others).
         let auth = match (&self.settings.access_key_id, &self.settings.secret_access_key) {
             (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => Some(S3Auth {
                 access_key_id: id.clone(),

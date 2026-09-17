@@ -1,0 +1,154 @@
+# Default values for the StrIEM chart.
+# The three long-lived services (api, detection, vector) plus an optional
+# ClickHouse. api and detection share one image; vector uses its own.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Shared image for the api and detection services (the striem image).
+image:
+  repository: striem
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  # If empty and create is true, a name is generated.
+  name: ""
+  annotations: {}
+
+# OpenTelemetry OTLP endpoint for traces/spans. Empty means traces are off (the
+# services still expose Prometheus metrics regardless).
+otel:
+  endpoint: ""
+
+# ---------------------------------------------------------------------------
+# API / UI service
+# ---------------------------------------------------------------------------
+api:
+  replicas: 1
+  logLevel: info
+  service:
+    type: ClusterIP
+    port: 8080
+  # DuckDB query-metadata directory. Small and rebuildable, so ephemeral by
+  # default. Enable persistence to keep it across restarts.
+  db:
+    persistence:
+      enabled: false
+      size: 5Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Detection service (rsigma-detection)
+# ---------------------------------------------------------------------------
+detection:
+  replicas: 1
+  logLevel: info
+  grpcPort: 9000
+  metricsPort: 9101
+  # On-disk directory for the Sigma rules (RSIGMA_DETECTION_RULES).
+  rulesPath: /data/detections
+  # Sigma rules live on disk and are managed through the UI/API, so they need a
+  # persistent volume.
+  rules:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Vector
+# ---------------------------------------------------------------------------
+vector:
+  image:
+    repository: vector
+    tag: distroless-libc
+    pullPolicy: IfNotPresent
+  # An init container clones the OCSF parquet schemas and the OCSF remap VRL into
+  # the vector pod. Only vector reads these files; the api emits their paths.
+  setup:
+    image: alpine/git:latest
+    schemaRepo: https://github.com/crowdalert/ocsf-parquet.git
+    remapRepo: https://github.com/crowdalert/ocsf-vrl.git
+  # STRIEM_SCHEMA_DIR: the versioned schema root inside the cloned schema repo.
+  schemaDir: /schemas/parquet/ocsf/v1.8.0
+  # STRIEM_REMAPS: the remap root. The api emits <remaps>/<type>/remap.vrl paths.
+  remapsDir: /remaps
+  ports:
+    findings: 6000 # gRPC: detection findings in (source-striem)
+    httpIngest: 9900 # HTTP log ingest
+    hecIngest: 9990 # Splunk HEC ingest
+    api: 9999 # Vector's own API
+    metrics: 9100 # Prometheus (internal_metrics)
+  # Expose the ingest ports (http/hec) outside the cluster.
+  ingest:
+    type: ClusterIP # set to LoadBalancer or NodePort to expose ingest
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Shared parquet storage (vector writes, api reads for the Explore/query tab).
+# This is the only volume shared between pods. ReadWriteMany lets the api and
+# vector pods run on different nodes; with ReadWriteOnce they must share a node.
+# ---------------------------------------------------------------------------
+storage:
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  mountPath: /data/storage
+
+# ---------------------------------------------------------------------------
+# Optional ClickHouse destination
+# ---------------------------------------------------------------------------
+clickhouse:
+  enabled: false
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: 26.4-distroless
+    pullPolicy: IfNotPresent
+  auth:
+    user: default
+    # If empty, no password is set. Prefer setting existingSecret instead.
+    password: ""
+    existingSecret: ""
+  ports:
+    http: 8123
+    native: 9000
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  resources: {}
+
+# ---------------------------------------------------------------------------
+# Ingress for the API/UI
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: striem.local
+  path: /
+  pathType: Prefix
+  tls: []

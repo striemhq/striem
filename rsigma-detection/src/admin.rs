@@ -1,15 +1,17 @@
 //! Detection-admin gRPC service for rsigma-detection.
 //!
-//! Implements the shared [`Detections`] protocol (from `striem_detection`) so
-//! the StrIEM API/UI's rule-management proxy works against this engine — the
-//! same contract the `sigmars`-backed service exposes.
+//! This service implements the shared [`Detections`] protocol (from
+//! `striem_detection`). Thus the StrIEM API and UI rule-management proxy works
+//! against this engine too. This is the same contract that the `sigmars`
+//! service gives.
 //!
-//! rsigma manages rules **on disk**, so this service is a thin layer over the
-//! engine's rules directory ([`LogProcessor::rules_path`]): it reads/parses the
-//! rule files for `List`/`Get`, writes new files for `Create`, and toggles a
-//! `.disabled` suffix for `SetEnabled` — reloading the engine after any change
-//! via [`LogProcessor::reload_rules`]. Disabled rules keep a non-`.yml`
-//! extension so rsigma's loader skips them while they remain visible here.
+//! rsigma manages the rules **on disk**. Thus this service is a thin layer over
+//! the engine's rules directory ([`LogProcessor::rules_path`]). It reads and
+//! parses the rule files for `List` and `Get`. It writes new files for
+//! `Create`. It adds or removes a `.disabled` suffix for `SetEnabled`. After
+//! each change, it reloads the engine with [`LogProcessor::reload_rules`]. A
+//! disabled rule keeps an extension that is not `.yml`. Thus rsigma's loader
+//! skips it, but this service still shows it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,7 +29,7 @@ use striem_detection::{
 
 const DISABLED_SUFFIX: &str = ".disabled";
 
-/// gRPC service backing rule administration over the engine's rules directory.
+/// The gRPC service for rule administration over the engine's rules directory.
 pub struct DetectionAdmin {
     processor: Arc<LogProcessor>,
 }
@@ -38,16 +40,17 @@ impl DetectionAdmin {
     }
 }
 
-/// A rule file discovered on disk, with its parsed rule and enabled state.
+/// A rule file on disk, with its parsed rule and its enabled state.
 struct RuleEntry {
     path: PathBuf,
     enabled: bool,
     rule: SigmaRule,
 }
 
-/// Recursively read every Sigma rule under `dir`. Files ending in `.yml`/`.yaml`
-/// are enabled; a trailing `.disabled` (e.g. `foo.yml.disabled`) marks a rule
-/// disabled — parsed here for visibility but skipped by rsigma's loader.
+/// Reads every Sigma rule under `dir`, and under its subdirectories. A file that
+/// ends in `.yml` or `.yaml` is enabled. A file with a `.disabled` suffix (for
+/// example `foo.yml.disabled`) is disabled. This function parses a disabled file
+/// to show it, but rsigma's loader skips it.
 fn scan_rules(dir: &Path) -> Vec<RuleEntry> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -189,8 +192,9 @@ impl Detections for DetectionAdmin {
                 .ok_or_else(|| Status::not_found("rule not found"))?;
 
             if entry.enabled != enabled {
-                // Toggle the `.disabled` suffix so rsigma's loader (which only
-                // reads `.yml`/`.yaml`) skips or picks up the rule accordingly.
+                // Add or remove the `.disabled` suffix. rsigma's loader reads
+                // only `.yml` and `.yaml` files. Thus it then skips or loads
+                // the rule.
                 let target = if enabled {
                     PathBuf::from(entry.path.to_string_lossy().trim_end_matches(DISABLED_SUFFIX))
                 } else {

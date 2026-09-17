@@ -63,11 +63,13 @@ services:
         condition: service_completed_successfully
     ports:
       - "9000:9000"
+      - "9101:9101"  # Prometheus metrics
     environment:
       - RUST_LOG=debug
       - RSIGMA_DETECTION_INPUT=0.0.0.0:9000
       - RSIGMA_DETECTION_OUTPUT=http://vector:6000
       - RSIGMA_DETECTION_RULES=/data/detections
+      - RSIGMA_DETECTION_METRICS=0.0.0.0:9101
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -85,6 +87,7 @@ services:
       - "9900:9900"  # HTTP log ingest
       - "9990:9990"  # Splunk HEC ingest
       - "9999:9999"  # Vector API
+      - "9100:9100"  # Prometheus metrics (internal_metrics)
     depends_on:
       api:
         condition: service_started

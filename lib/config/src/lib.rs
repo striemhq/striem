@@ -1,12 +1,13 @@
-//! Configuration management for StrIEM.
+//! Configuration control for StrIEM.
 //!
-//! Uses [Config](https://docs.rs/config/latest/config/index.html), supports loading from:
+//! This crate uses [Config](https://docs.rs/config/latest/config/index.html). It
+//! reads the configuration from these sources:
 //! - Configuration files (YAML, JSON, TOML)
-//! - Environment variables (STRIEM_ prefix)
-//! - Defaults
+//! - Environment variables (with the STRIEM_ prefix)
+//! - Default values
 //!
-//! Environment variables override file settings, enabling Docker/K8s deployments
-//! without rebuilding config files.
+//! An environment variable replaces the value from a file. Thus you can
+//! configure a Docker or K8s deployment without a change to a config file.
 
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -24,7 +25,7 @@ pub mod storage;
 
 mod tests;
 
-/// Configuration value that accepts either a single string or array of strings
+/// A configuration value. It accepts one string or an array of strings.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum StringOrList {
@@ -142,34 +143,36 @@ impl HostConfig {
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 struct StrIEMConfigOptions {
-    /// Directory for the query database (DuckDB). Optional: when unset, event
-    /// querying is unavailable unless a `storage` path is configured.
+    /// The directory for the query database (DuckDB). This field is optional.
+    /// If you do not set it, you cannot query events. You must set a `storage`
+    /// path to query events.
     db: Option<PathBuf>,
 
-    /// Directory of Sigma detection rules to load at startup and persist new
-    /// rules to. Optional: by default no rules are stored on disk — they are
-    /// loaded through the UI and live only in memory.
+    /// The directory of Sigma detection rules. The service loads these rules at
+    /// startup. It also saves new rules to this directory. This field is
+    /// optional. By default the service does not save rules to disk. The UI
+    /// loads the rules, and the rules stay in memory only.
     #[serde(with = "serde_yaml::with::singleton_map")]
     detections: Option<StringOrList>,
 
-    /// gRPC endpoint of the detection microservice, used by the API service to
-    /// administer rules. Defaults to the `input` listener address, since the
-    /// detection service mounts its admin API on the same server.
+    /// The gRPC endpoint of the detection microservice. The API service uses it
+    /// to administer rules. The default is the `input` listener address,
+    /// because the detection service hosts its admin API on the same server.
     detection: Option<HostConfig>,
 
-    /// Vector gRPC ingestion listener address.
+    /// The address of the Vector gRPC input listener.
     input: Option<HostConfig>,
 
-    /// Downstream Vector destination for detection findings.
+    /// The downstream Vector destination for detection findings.
     output: Option<output::VectorDestinationConfig>,
 
-    /// Storage backend configuration
+    /// The storage backend configuration.
     storage: Option<storage::StorageConfig>,
 
-    /// API server configuration
+    /// The API server configuration.
     api: Option<api::ApiConfig>,
 
-    /// Fully qualified domain name for this StrIEM instance
+    /// The fully qualified domain name of this StrIEM instance.
     fqdn: Option<String>,
 }
 
@@ -314,10 +317,12 @@ impl StrIEMConfig {
         Ok(config.into())
     }
 
-    /// gRPC URL the API service should use to reach the detection microservice.
+    /// The gRPC URL that the API service uses to reach the detection
+    /// microservice.
     ///
-    /// Prefers an explicit `detection` endpoint, otherwise derives it from the
-    /// `input` listener (where the detection service mounts its admin API).
+    /// This function uses the `detection` endpoint if you set it. If not, it
+    /// makes the URL from the `input` listener. The detection service hosts its
+    /// admin API on that listener.
     pub fn detection_endpoint(&self) -> String {
         self.detection
             .as_ref()

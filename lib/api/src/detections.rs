@@ -1,15 +1,15 @@
-//! Sigma detection rule management endpoints.
+//! Endpoints to manage Sigma detection rules.
 //!
-//! Provides CRUD operations for Sigma rules:
-//! - GET /api/1/detections - List all rules (summary view)
-//! - GET /api/1/detections/:id - Get full rule details
-//! - PATCH /api/1/detections/:id - Enable/disable rule
-//! - POST /api/1/detections - Upload new YAML rule
+//! These endpoints give CRUD operations for Sigma rules:
+//! - GET /api/1/detections - lists all the rules (a summary view)
+//! - GET /api/1/detections/:id - gets the full details of one rule
+//! - PATCH /api/1/detections/:id - enables or disables a rule
+//! - POST /api/1/detections - adds a new YAML rule
 //!
-//! These endpoints are a thin proxy: the rules themselves live in the detection
-//! microservice, which owns the SigmaCollection and persistence. Each handler
-//! forwards to the detection-admin gRPC service and translates gRPC status codes
-//! into HTTP responses.
+//! These endpoints are a thin proxy. The rules are in the detection
+//! microservice. That microservice owns the SigmaCollection and the storage.
+//! Each handler sends the request to the detection-admin gRPC service. Then it
+//! changes the gRPC status code to an HTTP response.
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -20,7 +20,7 @@ use striem_detection::{CreateRequest, GetRequest, ListRequest, SetEnabledRequest
 
 use crate::ApiState;
 
-/// Translate a gRPC status from the detection service into an HTTP error.
+/// Changes a gRPC status from the detection service to an HTTP error.
 fn grpc_error(status: tonic::Status) -> (StatusCode, String) {
     let code = match status.code() {
         Code::NotFound => StatusCode::NOT_FOUND,
@@ -32,11 +32,12 @@ fn grpc_error(status: tonic::Status) -> (StatusCode, String) {
     (code, status.message().to_string())
 }
 
-/// List all detection rules with summary information.
+/// Lists all the detection rules with summary information.
 ///
 /// # Response Format
-/// Returns array of rule summaries with: id, title, description, enabled, level, logsource.
-/// Summaries are computed by the detection service; a malformed rule is skipped there.
+/// This handler gives an array of rule summaries. Each summary has an id, a
+/// title, a description, the enabled state, a level, and a logsource. The
+/// detection service makes the summaries. It skips a rule with bad format.
 async fn list_rules(
     State(state): State<ApiState>,
 ) -> Result<axum::Json<Vec<serde_json::Value>>, (StatusCode, String)> {
@@ -48,7 +49,7 @@ async fn list_rules(
         .into_inner()
         .summaries;
 
-    // Each summary is a JSON object string; skip any that fail to parse.
+    // Each summary is a JSON object string. Skip a summary that does not parse.
     let rules = summaries
         .iter()
         .filter_map(|s| serde_json::from_str(s).ok())
@@ -102,15 +103,16 @@ async fn patch_rule(
     Ok(axum::Json(rule_json))
 }
 
-/// Upload a new Sigma rule from YAML content.
+/// Adds a new Sigma rule from YAML content.
 ///
 /// # Request Format
-/// Expects raw YAML in request body (not JSON-wrapped).
-/// Content-Type should be text/yaml or application/x-yaml.
+/// The request body must be raw YAML. Do not put it in a JSON object. The
+/// Content-Type must be text/yaml or application/x-yaml.
 ///
-/// # Validation & Side Effects
-/// The detection service parses/validates the YAML, rejects id conflicts, adds
-/// the rule to the live collection, and persists it to disk.
+/// # Validation and Side Effects
+/// The detection service parses the YAML and checks it. It rejects an id that
+/// is already in use. It adds the rule to the live collection. It also saves the
+/// rule to disk.
 async fn post_rule(
     State(state): State<ApiState>,
     body: String,

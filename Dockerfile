@@ -16,10 +16,13 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY striem/Cargo.toml striem/Cargo.toml
 
+# The workspace globs `lib/*`, so every crate under lib/ must be listed here
+# (manifest + stub source) or `cargo chef prepare` fails to resolve the graph.
 COPY lib/api/Cargo.toml lib/api/Cargo.toml
 COPY lib/common/Cargo.toml lib/common/Cargo.toml
 COPY lib/config/Cargo.toml lib/config/Cargo.toml
 COPY lib/detection/Cargo.toml lib/detection/Cargo.toml
+COPY lib/telemetry/Cargo.toml lib/telemetry/Cargo.toml
 COPY lib/vector/Cargo.toml lib/vector/Cargo.toml
 COPY rsigma-detection/Cargo.toml rsigma-detection/Cargo.toml
 
@@ -30,6 +33,7 @@ RUN mkdir -p lib/api/src && touch lib/api/src/lib.rs
 RUN mkdir -p lib/common/src && touch lib/common/src/lib.rs
 RUN mkdir -p lib/config/src && touch lib/config/src/lib.rs
 RUN mkdir -p lib/detection/src && touch lib/detection/src/lib.rs
+RUN mkdir -p lib/telemetry/src && touch lib/telemetry/src/lib.rs
 RUN mkdir -p lib/vector/src && touch lib/vector/src/lib.rs
 
 RUN mkdir -p striem/src && printf 'fn main(){}\n' > striem/src/main.rs && touch striem/src/lib.rs

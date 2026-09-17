@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "striem.api.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "striem.componentSelectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "striem.componentSelectorLabels" (dict "root" . "component" "api") | nindent 8 }}
+      {{- with .Values.api.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "striem.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "striem.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["striem_api"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.port }}
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.api.logLevel | quote }}
+            - name: STRIEM_API_ENABLED
+              value: "1"
+            - name: STRIEM_API_ADDRESS
+              value: "0.0.0.0:{{ .Values.api.service.port }}"
+            - name: STRIEM_DB
+              value: "/data"
+            - name: STRIEM_STORAGE_PATH
+              value: {{ .Values.storage.mountPath | quote }}
+            # Findings/logsource forwarder target (the detection gRPC ingest).
+            - name: STRIEM_FQDN
+              value: "http://{{ include "striem.detection.fullname" . }}:{{ .Values.detection.grpcPort }}"
+            - name: STRIEM_DETECTION_URL
+              value: "http://{{ include "striem.detection.fullname" . }}:{{ .Values.detection.grpcPort }}"
+            # Vector destination: the findings gRPC sink plus the ingest bind
+            # addresses that the generated config tells Vector to listen on.
+            - name: STRIEM_OUTPUT_URL
+              value: "http://{{ include "striem.vector.fullname" . }}:{{ .Values.vector.ports.findings }}"
+            - name: STRIEM_OUTPUT_HTTP_ADDRESS
+              value: "0.0.0.0:{{ .Values.vector.ports.httpIngest }}"
+            - name: STRIEM_OUTPUT_HEC_ADDRESS
+              value: "0.0.0.0:{{ .Values.vector.ports.hecIngest }}"
+            - name: STRIEM_OUTPUT_API_ADDRESS
+              value: "0.0.0.0:{{ .Values.vector.ports.api }}"
+            # Prometheus endpoints the dashboard scrapes.
+            - name: STRIEM_VECTOR_METRICS_URL
+              value: "http://{{ include "striem.vector.fullname" . }}:{{ .Values.vector.ports.metrics }}/metrics"
+            - name: STRIEM_DETECTION_METRICS_URL
+              value: "http://{{ include "striem.detection.fullname" . }}:{{ .Values.detection.metricsPort }}/metrics"
+            {{- if .Values.otel.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: db
+              mountPath: /data
+            - name: storage
+              mountPath: {{ .Values.storage.mountPath }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- with .Values.api.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: db
+          {{- if .Values.api.db.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "striem.api.fullname" . }}-db
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: storage
+          {{- if .Values.storage.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "striem.fullname" . }}-storage
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if .Values.api.db.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "striem.api.fullname" . }}-db
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.api.db.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.api.db.persistence.size }}
+  {{- if .Values.api.db.persistence.storageClass }}
+  storageClassName: {{ .Values.api.db.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

@@ -1,10 +1,11 @@
 # rsigma-detection
 
-A StrIEM `detection`-service variant powered by the [rsigma](https://github.com/timescale/rsigma)
-engine. It is a drop-in alternative to StrIEM's built-in detection service that
-reuses StrIEM's Vector ingest/egress and event model unchanged, but swaps the
-`sigmars` engine for rsigma-runtime — taking rsigma's conflict-based
-`logsource_compatible` pruning path instead of a strict logsource subset filter.
+A variant of StrIEM's `detection` service. The [rsigma](https://github.com/timescale/rsigma)
+engine drives it. It is a replacement for StrIEM's built-in detection service.
+It uses StrIEM's Vector input and output and its event model with no change. But
+it replaces the `sigmars` engine with rsigma-runtime. Thus it takes rsigma's
+conflict-based `logsource_compatible` pruning path. It does not take the strict
+logsource subset filter.
 
 ```text
   Vector ──gRPC PushEvents──▶ striem_vector server ──▶ LogProcessor / RuntimeEngine
@@ -14,35 +15,34 @@ reuses StrIEM's Vector ingest/egress and event model unchanged, but swaps the
   Vector ◀─gRPC PushEvents── striem_vector client ◀── OCSF Detection Findings (2004)
 ```
 
-## What it reuses vs. replaces
+## What it reuses and what it replaces
 
 | Concern | Source |
 |---|---|
-| Vector gRPC ingest / egress | `striem_vector` (`Server`, `Client`) — **reused as-is** |
+| Vector gRPC input and output | `striem_vector` (`Server`, `Client`) — **reused as-is** |
 | In-process event model (`Event`, `SysMessage`) | `striem_common` — **reused as-is** |
-| OCSF Detection Finding output (class_uid 2004) | this crate (`ocsf.rs`) — same shape as StrIEM's `rule_to_ocsf` |
+| OCSF Detection Finding output (class_uid 2004) | this crate (`ocsf.rs`) — the same shape as StrIEM's `rule_to_ocsf` |
 | Detection engine | `rsigma-runtime` `RuntimeEngine` / `LogProcessor` — **replaces `sigmars`** |
-| Rule selection | rsigma `LogSourceExtractor` + conflict pruning — **replaces the subset filter** |
+| Rule selection | rsigma `LogSourceExtractor` and conflict pruning — **replaces the subset filter** |
 
-## The pruning path — how it differs from StrIEM's detection service
+## The pruning path — how it is not the same as StrIEM's detection service
 
-StrIEM's `detection` service selects rules with a logsource **subset** filter: a
-rule runs only if its logsource ⊆ the event's, so an event *less* specific than
-a rule **excludes** that rule.
+StrIEM's `detection` service selects rules with a logsource **subset** filter. A
+rule runs only if its logsource is a subset of the event's logsource. Thus an
+event that is *less* specific than a rule **excludes** that rule.
 
-This service instead installs a `LogSourceExtractor` on the engine, selecting
-rsigma's **conflict-based** evaluation:
+This service installs a `LogSourceExtractor` on the engine in place of the subset
+filter. This selects rsigma's **conflict-based** evaluation:
 
-- a rule is skipped **only** when a logsource dimension it declares *conflicts*
-  with the event's extracted logsource (e.g. rule `product: linux` vs event
-  `product: windows`);
-- rules with no conflict — and all logsource-less rules — still run;
-- an event with **no** extractable logsource evaluates against everything
-  (fail-open).
+- The engine skips a rule **only** when a logsource dimension of the rule
+  *conflicts* with the event's extracted logsource (for example, rule
+  `product: linux` against event `product: windows`).
+- A rule with no conflict still runs. A rule with no logsource also runs.
+- An event with **no** logsource evaluates against all the rules (fail-open).
 
-This is "don't run contradictory rules," not a whitelist. The three cases are
-pinned in [`tests/pruning.rs`](tests/pruning.rs); a full event→finding round
-trip is in [`tests/handler.rs`](tests/handler.rs).
+This means "do not run rules that contradict the event." It is not a whitelist.
+[`tests/pruning.rs`](tests/pruning.rs) holds the three cases. A full
+event-to-finding round trip is in [`tests/handler.rs`](tests/handler.rs).
 
 ## Running
 
@@ -54,49 +54,51 @@ cargo run -p rsigma-detection -- \
   --event-logsource product=windows
 ```
 
-| Flag | Env fallback | Default | Meaning |
+| Flag | Env variable | Default | Meaning |
 |---|---|---|---|
-| `--rules <PATH>` | `RSIGMA_DETECTION_RULES` | *(required)* | Sigma rules directory or file |
-| `--input <ADDR>` | `RSIGMA_DETECTION_INPUT` | `0.0.0.0:6000` | Vector ingest bind address |
-| `--output <URL>` | `RSIGMA_DETECTION_OUTPUT` | *(none)* | Downstream Vector endpoint for findings |
-| `--batch-size <N>` | `RSIGMA_DETECTION_BATCH_SIZE` | `64` | Events per engine evaluation |
-| `--logsource-field-map <KV>` | `RSIGMA_DETECTION_LOGSOURCE_FIELD_MAP` | *(none)* | Override which `metadata.logsource` sub-keys feed each dimension |
-| `--event-logsource <KV>` | `RSIGMA_DETECTION_EVENT_LOGSOURCE` | *(none)* | Static logsource when the event's metadata carries none |
-| `--no-logsource-pruning` | — | *(off)* | Disable conflict pruning (evaluate every rule) |
+| `--rules <PATH>` | `RSIGMA_DETECTION_RULES` | *(required)* | The Sigma rules directory or file |
+| `--input <ADDR>` | `RSIGMA_DETECTION_INPUT` | `0.0.0.0:6000` | The Vector input bind address |
+| `--output <URL>` | `RSIGMA_DETECTION_OUTPUT` | *(none)* | The downstream Vector endpoint for findings |
+| `--batch-size <N>` | `RSIGMA_DETECTION_BATCH_SIZE` | `64` | Events for each engine evaluation |
+| `--logsource-field-map <KV>` | `RSIGMA_DETECTION_LOGSOURCE_FIELD_MAP` | *(none)* | Sets which `metadata.logsource` sub-keys feed each dimension |
+| `--event-logsource <KV>` | `RSIGMA_DETECTION_EVENT_LOGSOURCE` | *(none)* | The fixed logsource when the event's metadata has none |
+| `--no-logsource-pruning` | — | *(off)* | Turns off conflict pruning (evaluate every rule) |
 
 `<KV>` is `product=…,service=…,category=…,custom.<dim>=…`.
-`RUST_LOG` controls log verbosity (default `info`), same as the rest of StrIEM.
+`RUST_LOG` sets the log level (the default is `info`), the same as the rest of
+StrIEM.
 
 ### Where the logsource comes from
 
-Each event's logsource is taken from **`Event.metadata["logsource"]`** — StrIEM's
-convention — *not* from the log body. Vector (or an upstream normalizer) is
-expected to set it, e.g.:
+Each event's logsource comes from **`Event.metadata["logsource"]`** (StrIEM's
+convention). It does *not* come from the log body. Vector, or an upstream
+normalizer, must set it, for example:
 
 ```json
 { "product": "windows", "service": "sysmon" }
 ```
 
-The event body (`Event.data`) is what the rules match against. The two are kept
-strictly separate: the logsource is shown only to the pruning extractor, never
-to keyword/`|contains` matching, so a logsource value like `"windows"` can never
-cause a keyword rule to fire (see `src/logsource_event.rs`).
+The rules match against the event body (`Event.data`). The two are apart. The
+service shows the logsource only to the pruning extractor. It never shows the
+logsource to keyword or `|contains` matching. Thus a logsource value such as
+`"windows"` can never make a keyword rule fire (see `src/logsource_event.rs`).
 
 - **Field map** (`--logsource-field-map product=os_type`): read a dimension from
-  a differently-named sub-key of `metadata.logsource` (here, product ←
-  `metadata.logsource.os_type`). Unset dimensions default to the standard
-  `product` / `service` / `category` keys. Most deployments leave this unset.
-- **Static default** (`--event-logsource product=windows`): applied when the
-  event's metadata does not carry that dimension — useful when an ingest stream
-  is known to be one platform.
+  a sub-key of `metadata.logsource` that has a different name (here, product
+  reads from `metadata.logsource.os_type`). A dimension that you do not set uses
+  the standard `product`, `service`, or `category` key. Most deployments do not
+  set this.
+- **Fixed default** (`--event-logsource product=windows`): the service uses it
+  when the event's metadata has no such dimension. This is useful when one input
+  stream is always one platform.
 
-With no logsource in metadata and no static default, the event is **fail-open**:
-every rule is eligible (nothing is pruned).
+When the metadata has no logsource and there is no fixed default, the event is
+**fail-open**: every rule can run (the service prunes nothing).
 
 ## Vector configuration
 
-Point a Vector `vector` sink at the ingest address, and a `vector` source at
-wherever you route findings:
+Point a Vector `vector` sink at the input address. Point a `vector` source at
+the place where you route the findings:
 
 ```toml
 [sinks.to_detector]
@@ -112,21 +114,21 @@ address = "0.0.0.0:6001"
 ## Relationship to the workspace
 
 `rsigma-detection` is a member of the StrIEM Cargo workspace. It path-depends on
-StrIEM's `lib/common` and `lib/vector`, and depends on the rsigma engine crates
+StrIEM's `lib/common` and `lib/vector`. It depends on the rsigma engine crates
 (`rsigma-parser`, `rsigma-eval`, `rsigma-runtime`) as **git dependencies** pinned
-to a tag, so the Docker image builds self-contained.
+to a tag. Thus the Docker image builds on its own.
 
 For local development against a live `../rsigma` checkout, the workspace-root
-`.cargo/config.toml` carries a `paths` override that redirects those crates to
-`../rsigma/crates/*`, so uncommitted rsigma changes are picked up immediately.
-That override is excluded from the Docker build via `.dockerignore`; the image
-always builds from the pinned git tag. (Cargo prints a harmless warning about
-the override because the rsigma crates depend on each other — it does not affect
-correctness.)
+`.cargo/config.toml` has a `paths` override. This override sends those crates to
+`../rsigma/crates/*`. Thus you can use rsigma changes at once. The
+`.dockerignore` excludes this override from the Docker build. Thus the image
+always builds from the pinned git tag. (Cargo prints a warning about the override
+because the rsigma crates depend on each other. The warning is harmless. It does
+not affect correctness.)
 
 ## Docker
 
-The service ships in the shared `striem:latest` image and runs as the
+The service ships in the shared `striem:latest` image. It runs as the
 `detection` service in `docker-compose.yaml`:
 
 ```sh
@@ -134,13 +136,13 @@ docker compose build      # builds striem_api, usdetect, and rsigma-detection
 docker compose up
 ```
 
-Because the rsigma crates are a **private** git dependency, the image build
-needs Git credentials for `github.com/timescale/rsigma`. Provide them with a
-BuildKit SSH mount (`docker build --ssh default …`) or a token-based credential
-helper; the Dockerfile sets `CARGO_NET_GIT_FETCH_WITH_CLI=true` so the system
-git handles auth.
+The rsigma crates are a **private** git dependency. Thus the image build needs
+Git credentials for `github.com/timescale/rsigma`. Give them with a BuildKit SSH
+mount (`docker build --ssh default …`) or a token-based credential helper. The
+Dockerfile sets `CARGO_NET_GIT_FETCH_WITH_CLI=true`. Thus the system git does the
+authentication.
 
-Runtime configuration in compose uses the `RSIGMA_DETECTION_*` variables (see
-the table above). Note that, unlike the legacy `usdetect` service,
-`rsigma-detection` does not host the detection-admin gRPC API — rules are
-managed on disk under `RSIGMA_DETECTION_RULES`, not through the api/UI proxy.
+The compose runtime configuration uses the `RSIGMA_DETECTION_*` variables (see
+the table above). `rsigma-detection` hosts the detection-admin gRPC API on its
+input listener. Thus the api and UI rule proxy works against it. The rules also
+live on disk under `RSIGMA_DETECTION_RULES`.

@@ -1,16 +1,16 @@
-//! HTTP API server for StrIEM management interface.
+//! HTTP API server for the StrIEM management interface.
 //!
-//! Provides REST endpoints for:
-//! - Source management (add/remove data sources)
-//! - Detection rule management (list/enable/disable/upload)
-//! - Data querying (DuckDB SQL queries on Parquet files)
+//! This module gives REST endpoints for these tasks:
+//! - Source management (add or remove a data source)
+//! - Detection rule management (list, enable, disable, or upload a rule)
+//! - Data queries (DuckDB SQL queries on Parquet files)
 //! - Vector configuration generation
 //!
 //! # Architecture
-//! - Axum for HTTP routing and middleware
-//! - Tower HTTP for CORS and static file serving
-//! - DuckDB connection pool for query execution
-//! - Shared state (Arc) for detection rules and configuration
+//! - Axum does the HTTP routing and the middleware.
+//! - Tower HTTP does the CORS and serves the static files.
+//! - A DuckDB connection pool runs the queries.
+//! - A shared state (Arc) holds the detection rules and the configuration.
 
 use std::sync::Arc;
 
@@ -34,16 +34,17 @@ use crate::{
     ApiState, actions::Mcp, features::feature_flag_middleware, initdb, routes::create_router, store,
 };
 
-/// Initialize and run the API server.
+/// Starts the API server and runs it.
 ///
 /// # Database Initialization
-/// Creates DuckDB connection pool if storage is configured.
-/// Uses file-backed DB if data_dir specified, otherwise in-memory.
-/// Enables parquet_metadata_cache for faster queries on large datasets.
+/// This function makes a DuckDB connection pool if you configure storage. It
+/// uses a file database if you set `data_dir`. If not, it uses an in-memory
+/// database. It starts `parquet_metadata_cache` for faster queries on large
+/// datasets.
 ///
 /// # UI Serving
-/// Serves Next.js static export from binary path or configured ui.path.
-/// Redirects / to /ui for convenience.
+/// This function serves the Next.js static export. It reads the files from the
+/// binary path or the configured `ui.path`. It also redirects / to /ui.
 pub async fn serve(
     config: &Arc<ArcSwap<StrIEMConfig>>,
     sys: tokio::sync::broadcast::Sender<SysMessage>,
@@ -53,9 +54,9 @@ pub async fn serve(
 
     let mut features: Vec<String> = Vec::new();
 
-    // Detection rule management is delegated to the detection microservice over
-    // gRPC. Connect lazily so the API can start before the detection service is
-    // reachable; per-request calls establish the connection on first use.
+    // The detection microservice manages the detection rules. The API reaches it
+    // over gRPC. The connection is lazy, so the API can start before the
+    // detection service is available. The first request makes the connection.
     let endpoint = config.detection_endpoint();
     let detections = DetectionsClient::new(
         tonic::transport::Endpoint::from_shared(endpoint.clone())
@@ -64,7 +65,7 @@ pub async fn serve(
     );
     info!("detection admin client targeting {}", endpoint);
 
-    // Create DB connection pool
+    // Make the database connection pool.
     let db = initdb(&config).inspect(|_| {
         #[cfg(feature = "duckdb")]
         features.push("duckdb".to_string());
@@ -95,8 +96,9 @@ pub async fn serve(
         .as_ref()
         .and_then(|ui| if ui.enabled { ui.path.clone() } else { None })
         .map(std::path::PathBuf::from)
-        // Fallback: look for 'ui' directory next to binary (production deployment)
-        // This supports cargo build integration where UI is copied to target/ui
+        // Fallback: look for a 'ui' directory next to the binary (a production
+        // deployment). This supports the cargo build, which copies the UI to
+        // target/ui.
         .or_else(|| {
             std::env::current_exe()
                 .map_err(anyhow::Error::from)
@@ -124,6 +126,8 @@ pub async fn serve(
             state.clone(),
             feature_flag_middleware,
         ))
+        // Records the latency of every request.
+        .layer(middleware::from_fn(crate::observability::track_latency))
         .with_state(state);
 
     if let Some(path) = ui {

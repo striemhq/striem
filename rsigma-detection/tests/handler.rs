@@ -1,6 +1,6 @@
-//! Round-trip test for the detection worker: an ingested StrIEM [`Event`] that
-//! matches a rule produces a broadcast OCSF Detection Finding correlated back
-//! to the source event.
+//! A round-trip test for the detection worker. An input StrIEM [`Event`] that
+//! matches a rule makes an OCSF Detection Finding. The worker sends the finding
+//! out, and the finding links back to the source event.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,8 +60,9 @@ async fn matching_event_emits_correlated_ocsf_finding() {
     let mut handler = DetectionHandler::new(src_rx, dest_tx, processor, 64, sys_rx);
     let worker = tokio::spawn(async move { handler.run().await });
 
-    // A matching Windows event: logsource in metadata (StrIEM convention),
-    // plus a Vector ingest timestamp so the finding carries the event time.
+    // A matching Windows event. The logsource is in the metadata (StrIEM
+    // convention). It also has a Vector input timestamp, so the finding carries
+    // the event time.
     let mut metadata = HashMap::new();
     metadata.insert(
         "logsource".to_string(),
@@ -79,7 +80,7 @@ async fn matching_event_emits_correlated_ocsf_finding() {
     let source_id = event.id.to_string();
 
     src_tx.send(vec![event]).await.unwrap();
-    // Closing the source lets the worker drain and exit cleanly.
+    // The close of the source lets the worker finish and stop cleanly.
     drop(src_tx);
 
     let findings = dest_rx.recv().await.expect("a finding batch");
@@ -93,14 +94,14 @@ async fn matching_event_emits_correlated_ocsf_finding() {
         finding.data["finding_info"]["attacks"][0]["technique"]["uid"],
         "T1059"
     );
-    // Correlated back to the triggering event id.
+    // The finding links back to the id of the event that caused it.
     assert_eq!(finding.data["metadata"]["correlation_uid"], source_id);
-    // Event time carried from the Vector ingest timestamp (epoch millis).
+    // The event time comes from the Vector input timestamp (epoch milliseconds).
     let expected_ms = chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
         .unwrap()
         .timestamp_millis();
     assert_eq!(finding.data["time"], expected_ms);
-    // The finding's own uid is mirrored onto wire metadata.
+    // The finding's own uid is also on the wire metadata.
     assert_eq!(finding.metadata["uid"], finding.data["metadata"]["uid"]);
 
     worker.await.unwrap();

@@ -1,9 +1,9 @@
 //! StrIEM - Streaming Intelligence and Event Management
 //!
-//! Entry point for the StrIEM SIEM daemon. Responsible for:
-//! - Loading configuration from file or environment variables
-//! - Initializing the application with detection rules and storage
-//! - Handling graceful shutdown via SIGINT/SIGTERM
+//! The entry point for the StrIEM SIEM daemon. It does these tasks:
+//! - It loads the configuration from a file or from environment variables.
+//! - It starts the application with the detection rules and the storage.
+//! - It does a clean shutdown for SIGINT or SIGTERM.
 
 use std::path;
 
@@ -24,8 +24,9 @@ async fn main() -> Result<()> {
     let mut app = App::new(config).await?;
     let update = app.update_channel();
 
-    // Spawn signal handler for graceful shutdown
-    // Broadcast to all subsystems (API, Vector server, storage, detections)
+    // Start the signal handler for a clean shutdown.
+    // Send the shutdown to all the subsystems (API, Vector server, storage,
+    // detections).
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         info!("StrIEM shutting down...");
@@ -57,8 +58,9 @@ pub(crate) async fn config() -> Result<StrIEMConfig> {
         }
     };
 
-    // Load configuration from file if provided, otherwise use defaults/environment variables
-    // This allows both "striem" and "striem config.yaml" invocations
+    // Load the configuration from a file if you give one. If not, use the
+    // defaults and the environment variables. Thus you can start the daemon as
+    // "striem" or as "striem config.yaml".
     match cfgfiles.len() {
         0 => Ok(StrIEMConfig::new()?),
         _ => Ok(StrIEMConfig::from_multi_file(cfgfiles)?),

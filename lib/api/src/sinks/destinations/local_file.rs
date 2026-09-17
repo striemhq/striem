@@ -1,16 +1,20 @@
 //! Local Files (parquet) destination.
 //!
-//! Each OCSF class has its own parquet schema, so a single sink can't encode the
-//! heterogeneous `final-ocsf` stream. Instead this destination expands into:
+//! Each OCSF class has its own parquet schema. Thus one sink cannot encode the
+//! mixed `final-ocsf` stream. In place of one sink, this destination makes these
+//! components:
 //!
 //! 1. a `remap` that flattens events to fit the parquet schemas (`remap.vrl`),
-//! 2. an `exclusive_route` that splits the stream into one port per class, and
-//! 3. one `file` sink per class, each encoding against that class's schema.
+//! 2. an `exclusive_route` that splits the stream into one port for each class,
+//!    and
+//! 3. one `file` sink for each class. Each sink encodes with that class's
+//!    schema.
 //!
-//! Routes/sinks are named by the OCSF class short name (e.g. `api_activity`),
-//! read from the embedded `ocsf_class_category.json`. Schema/remap paths are
-//! emitted as `${STRIEM_SCHEMA_DIR}/…` and interpolated by Vector at load time,
-//! so the API never touches the schema files itself.
+//! The names of the routes and sinks are the OCSF class short names (for
+//! example `api_activity`). The service reads these names from the embedded
+//! `ocsf_class_category.json`. The service writes the schema and remap paths as
+//! `${STRIEM_SCHEMA_DIR}/…`. Vector replaces this variable when it loads the
+//! configuration. Thus the API does not open the schema files.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -32,13 +36,13 @@ pub struct LocalFile {
     pub settings: LocalFileSettings,
 }
 
-/// The embedded OCSF class/category map — the source of truth for the class
-/// list, so the fan-out doesn't depend on scanning the schema files.
+/// The embedded OCSF class/category map. It is the source of truth for the
+/// class list. Thus the fan-out does not read the schema files.
 const OCSF_CLASS_CATEGORY: &str = include_str!("../../../ocsf_class_category.json");
 
-/// Schema-directory root, interpolated by Vector from its environment. Points
-/// at the versioned schema set (the directory holding the category subdirs and
-/// `remap.vrl`).
+/// The root of the schema directory. Vector replaces this variable from its
+/// environment. It points to the versioned schema set (the directory with the
+/// category subdirectories and `remap.vrl`).
 const SCHEMA_DIR: &str = "${STRIEM_SCHEMA_DIR}";
 
 #[derive(Deserialize)]
@@ -49,29 +53,30 @@ struct OcsfMap {
     classes: BTreeMap<String, String>,
 }
 
-/// An OCSF class and the parquet schema file that describes it.
+/// An OCSF class and the parquet schema file for it.
 struct OcsfClass {
-    /// Short name (e.g. `api_activity`).
+    /// The short name (e.g. `api_activity`).
     name: String,
-    /// Numeric `class_uid`, used for the route condition.
+    /// The numeric `class_uid`. The route condition uses it.
     uid: u32,
-    /// Path to the `<class>.parquet.schema` file — emitted for Vector to read;
-    /// the API never opens it.
+    /// The path to the `<class>.parquet.schema` file. The API writes this path
+    /// for Vector to read. The API does not open the file.
     schema_file: String,
 }
 
-/// The whole fan-out layout derived purely from the embedded JSON — no
-/// filesystem access. Paths are `${STRIEM_SCHEMA_DIR}/…` for Vector to resolve.
+/// The full fan-out layout. It comes from the embedded JSON only. It does not
+/// read the filesystem. The paths are `${STRIEM_SCHEMA_DIR}/…`. Vector replaces
+/// this variable.
 struct OcsfLayout {
-    /// Path to `remap.vrl` under the schema root.
+    /// The path to `remap.vrl` under the schema root.
     remap_file: String,
     classes: Vec<OcsfClass>,
 }
 
-/// Build the layout from the embedded OCSF map. `schema_file`/`remap` paths are
-/// `${STRIEM_SCHEMA_DIR}/<category>/<class>.parquet.schema`; a class's category
-/// directory is derived from its uid (`class_uid / 1000`). Returns `None` only
-/// if the embedded JSON fails to parse.
+/// Makes the layout from the embedded OCSF map. The `schema_file` and `remap`
+/// paths are `${STRIEM_SCHEMA_DIR}/<category>/<class>.parquet.schema`. The
+/// function gets a class's category directory from its uid (`class_uid / 1000`).
+/// It gives `None` only if the embedded JSON does not parse.
 fn ocsf_layout() -> Option<OcsfLayout> {
     let map: OcsfMap = serde_json::from_str(OCSF_CLASS_CATEGORY).ok()?;
 
@@ -97,7 +102,7 @@ fn ocsf_layout() -> Option<OcsfLayout> {
 }
 
 impl LocalFile {
-    /// Hive-partitioned parquet path for a single class, e.g.
+    /// The Hive-partitioned parquet path for one class. An example is
     /// `<base>/class=api_activity/year=%Y/month=%m/day=%d/%H%M%S.parquet`.
     fn class_path(&self, class: &str) -> String {
         Path::new(&self.settings.path)
@@ -111,11 +116,12 @@ impl LocalFile {
             .into_owned()
     }
 
-    /// The parquet `file` sink for one class, encoding against its schema.
+    /// The parquet `file` sink for one class. It encodes with the class schema.
     fn class_sink(&self, route_id: &str, class: &OcsfClass) -> SinkType {
         SinkType::File {
             path: self.class_path(&class.name),
-            // Required by Vector's schema; ignored once batch_encoding is set.
+            // Vector's schema needs this field. Vector ignores it after you set
+            // batch_encoding.
             encoding: Encoding::default(),
             inputs: vec![format!("{}.{}", route_id, class.name)],
             batch_encoding: BatchEncoding::Parquet {
@@ -140,8 +146,8 @@ impl Sink for LocalFile {
     }
 
     fn typename(&self) -> String {
-        // Matches the Vector sink type; also the persistence discriminator and
-        // the `sink-file_<id>` component-id prefix.
+        // This is the same as the Vector sink type. It is also the storage type
+        // name and the prefix of the `sink-file_<id>` component id.
         "file".to_string()
     }
 
@@ -149,8 +155,9 @@ impl Sink for LocalFile {
         format!("Files ({})", self.settings.path)
     }
 
-    /// Fallback single-sink form, used only when no baked schemas are found:
-    /// one auto-inferred parquet sink over the whole stream.
+    /// The fallback form with one sink. The service uses it only when it finds
+    /// no schemas. This is one parquet sink for the full stream. It makes its
+    /// schema automatically.
     fn config(&self) -> SinkType {
         SinkType::File {
             path: format!("{}/%Y-%m-%d.parquet", self.settings.path.trim_end_matches('/')),
@@ -170,13 +177,14 @@ impl Sink for LocalFile {
     fn pipeline(&self, _ctx: &RenderCtx) -> anyhow::Result<Pipeline> {
         let base = format!("sink-{}_{}", self.typename(), self.id());
 
-        // The class list comes from the embedded JSON and paths resolve via
-        // Vector's `${STRIEM_SCHEMA_DIR}`, so the fan-out never touches the
+        // The class list comes from the embedded JSON. Vector replaces
+        // `${STRIEM_SCHEMA_DIR}` in the paths. Thus the fan-out does not read the
         // API's filesystem.
         let layout = ocsf_layout();
         let classes = layout.as_ref().map(|l| l.classes.as_slice()).unwrap_or_default();
 
-        // Only falls back if the embedded map failed to parse (shouldn't happen).
+        // The function uses the fallback only if the embedded map does not
+        // parse. This does not happen in normal operation.
         let (Some(layout), false) = (&layout, classes.is_empty()) else {
             let mut pipeline = Pipeline::default();
             pipeline.sinks.insert(base, component(self.config())?);
@@ -187,13 +195,13 @@ impl Sink for LocalFile {
         let route_id = format!("{}-route", base);
         let mut pipeline = Pipeline::default();
 
-        // 1. Flatten events so they fit the generated parquet schemas.
+        // 1. Flatten the events so they fit the parquet schemas.
         pipeline.transforms.insert(
             remap_id.clone(),
             Transform::remap_file(layout.remap_file.clone()).with_inputs([OCSF_INPUT]),
         );
 
-        // route by class_uid
+        // 2. Route the events by class_uid.
         let routes = classes
             .iter()
             .map(|c| Route {
@@ -209,7 +217,8 @@ impl Sink for LocalFile {
             Transform::exclusive_route(routes).with_inputs([remap_id.as_str()]),
         );
 
-        // 3. One parquet sink per class, reading that class's route port.
+        // 3. Make one parquet sink for each class. Each sink reads that class's
+        // route port.
         for class in classes {
             pipeline.sinks.insert(
                 format!("{}-{}", base, class.name),
@@ -225,7 +234,8 @@ impl Sink for LocalFile {
     }
 }
 
-/// If `sink` is a Local Files destination, the parquet directory it owns.
+/// Gives the parquet directory of `sink` if `sink` is a Local Files
+/// destination.
 pub fn storage_path(sink: &dyn Sink) -> Option<String> {
     (sink.typename() == "file")
         .then(|| sink.settings().get("path")?.as_str().map(str::to_string))

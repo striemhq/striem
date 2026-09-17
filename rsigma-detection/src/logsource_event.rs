@@ -1,22 +1,22 @@
-//! An [`Event`] view that pairs a log-data payload with a separately-sourced
-//! [`LogSource`].
+//! An [`Event`] view that joins a log-data payload with a [`LogSource`] from a
+//! separate source.
 //!
-//! In StrIEM's model the event **body** (the raw vendor log) and its
-//! **logsource** live apart: the body is in `Event.data`, but the logsource is
-//! carried in `Event.metadata["logsource"]`. rsigma, by contrast, derives the
-//! logsource from the *evaluated event's own fields* via a
-//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor), and that extractor
-//! is the only route to rsigma's conflict-based (`logsource_compatible`)
-//! pruning — the plain `Event::data` never carries `product`/`service`/etc.
+//! In StrIEM's model, the event **body** (the raw vendor log) and its
+//! **logsource** are apart. The body is in `Event.data`. The logsource is in
+//! `Event.metadata["logsource"]`. rsigma is different. It gets the logsource
+//! from the *fields of the event that it evaluates*, with a
+//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor). That extractor is
+//! the only way to rsigma's conflict-based (`logsource_compatible`) pruning. The
+//! plain `Event::data` does not carry `product`, `service`, and the others.
 //!
-//! [`LogsourceEvent`] bridges the two. It answers field lookups for the
-//! reserved [`LS_PREFIX`] namespace from the supplied `LogSource`, so the
-//! extractor (configured to read `__rsigma_ls.product` and friends) recovers
-//! the metadata logsource — while **every other operation delegates to the log
-//! data only**. Keyword search, bloom pre-filtering, timestamp extraction, and
-//! `to_json()` (used for correlation storage and `include_event`) therefore see
-//! exactly the vendor log and never the injected logsource, so a `|keyword`
-//! rule cannot falsely match on a logsource value like `"windows"`.
+//! [`LogsourceEvent`] joins the two. It answers a field lookup for the reserved
+//! [`LS_PREFIX`] namespace from the given `LogSource`. Thus the extractor (which
+//! reads `__rsigma_ls.product` and the others) gets the metadata logsource. But
+//! **every other operation uses only the log data**. Thus keyword search, bloom
+//! pre-filter, timestamp extraction, and `to_json()` (for correlation storage
+//! and `include_event`) see only the vendor log. They never see the added
+//! logsource. Thus a `|keyword` rule cannot match by mistake on a logsource
+//! value such as `"windows"`.
 
 use std::borrow::Cow;
 
@@ -24,23 +24,23 @@ use rsigma_eval::event::{Event, EventValue, JsonEvent};
 use rsigma_parser::LogSource;
 use serde_json::Value;
 
-/// Reserved field-path prefix under which the supplied logsource is exposed to
-/// the extractor. No real Sigma rule references it, and it is invisible to
-/// keyword search (see the module docs), so it cannot collide with, or leak
-/// into, detection matching.
+/// The reserved field-path prefix. The event shows the given logsource to the
+/// extractor under this prefix. No real Sigma rule uses it. Keyword search does
+/// not see it (see the module docs). Thus it cannot collide with the detection
+/// match, and it cannot leak into the detection match.
 pub const LS_PREFIX: &str = "__rsigma_ls.";
 
-/// A log-data event augmented with an out-of-band [`LogSource`].
+/// A log-data event with a [`LogSource`] from a separate source.
 ///
-/// Matching, keyword search, and serialization act on `data` alone; only the
-/// [`LS_PREFIX`] field namespace surfaces the logsource, for the extractor.
+/// The match, the keyword search, and the serialization use only `data`. Only
+/// the [`LS_PREFIX`] field namespace shows the logsource, for the extractor.
 pub struct LogsourceEvent<'a> {
     data: JsonEvent<'a>,
     logsource: LogSource,
 }
 
 impl<'a> LogsourceEvent<'a> {
-    /// Wrap a borrowed data payload with the logsource resolved from metadata.
+    /// Joins a borrowed data payload with the logsource from the metadata.
     pub fn new(data: &'a Value, logsource: LogSource) -> Self {
         Self {
             data: JsonEvent::borrow(data),
@@ -48,9 +48,9 @@ impl<'a> LogsourceEvent<'a> {
         }
     }
 
-    /// Resolve a reserved-namespace dimension (the part after [`LS_PREFIX`])
-    /// against the supplied logsource. `product`/`service`/`category` map to
-    /// the standard fields; anything else reads a custom dimension.
+    /// Gets a reserved-namespace dimension (the part after [`LS_PREFIX`]) from
+    /// the given logsource. `product`, `service`, and `category` use the
+    /// standard fields. Any other name reads a custom dimension.
     fn logsource_dim(&self, dim: &str) -> Option<&str> {
         match dim {
             "product" => self.logsource.product.as_deref(),
@@ -72,8 +72,8 @@ impl Event for LogsourceEvent<'_> {
     }
 
     fn any_string_value(&self, pred: &dyn Fn(&str) -> bool) -> bool {
-        // Delegate to the data only: the logsource must not participate in
-        // keyword matching.
+        // Use only the data. The logsource must not take part in the keyword
+        // match.
         self.data.any_string_value(pred)
     }
 
@@ -82,8 +82,8 @@ impl Event for LogsourceEvent<'_> {
     }
 
     fn to_json(&self) -> Value {
-        // Correlation storage and `include_event` capture the log body, not the
-        // synthetic logsource fields.
+        // Correlation storage and `include_event` take the log body. They do
+        // not take the added logsource fields.
         self.data.to_json()
     }
 
@@ -92,18 +92,18 @@ impl Event for LogsourceEvent<'_> {
     }
 }
 
-/// Parse the logsource carried in an event's metadata into a [`LogSource`].
+/// Parses the logsource in an event's metadata into a [`LogSource`].
 ///
-/// StrIEM stores it at `metadata["logsource"]` as an object like
-/// `{"product": "windows", "service": "sysmon"}`. A missing or malformed entry
-/// yields an empty logsource, which the engine treats as fail-open (every rule
-/// is eligible).
+/// StrIEM keeps it at `metadata["logsource"]` as an object, for example
+/// `{"product": "windows", "service": "sysmon"}`. An absent or bad entry gives
+/// an empty logsource. The engine treats an empty logsource as fail-open (every
+/// rule can run).
 pub fn logsource_from_metadata(
     metadata: &std::collections::HashMap<String, Value>,
 ) -> LogSource {
-    // `rsigma_parser::LogSource` is Serialize-only, so build it by hand from
-    // the metadata object. Standard keys map to their fields; any other string
-    // key becomes a custom dimension (mirroring the `#[serde(flatten)]` shape).
+    // `rsigma_parser::LogSource` can only serialize. Thus make it by hand from
+    // the metadata object. A standard key uses its field. Any other string key
+    // becomes a custom dimension (the same as the `#[serde(flatten)]` shape).
     let Some(obj) = metadata.get("logsource").and_then(Value::as_object) else {
         return LogSource::default();
     };
@@ -158,12 +158,12 @@ mod tests {
         let data = json!({ "EventID": 1, "CommandLine": "whoami" });
         let ev = LogsourceEvent::new(&data, ls(Some("windows"), None));
 
-        // Real data field resolves.
+        // A real data field resolves.
         assert_eq!(ev.get_field("CommandLine").unwrap().as_str().as_deref(), Some("whoami"));
-        // Keyword search sees the data but NOT the logsource value "windows".
+        // Keyword search sees the data, but not the logsource value "windows".
         assert!(ev.any_string_value(&|s| s == "whoami"));
         assert!(!ev.any_string_value(&|s| s == "windows"));
-        // Serialization is the data only.
+        // The serialization is the data only.
         assert_eq!(ev.to_json(), data);
     }
 

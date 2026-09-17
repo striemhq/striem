@@ -1,10 +1,11 @@
 //! Standalone detection microservice.
 //!
-//! Runs the StrIEM detection service on its own: a Vector gRPC listener, the
-//! Sigma detection engine, an optional downstream Vector forwarder, and the
-//! detection-admin gRPC API. Configuration is loaded from the environment
-//! (STRIEM_* variables) and any striem config file, identically to the main
-//! daemon; the API service connects to this process over gRPC.
+//! This binary runs the StrIEM detection service on its own. The service has a
+//! Vector gRPC listener, the Sigma detection engine, an optional downstream
+//! Vector forwarder, and the detection-admin gRPC API. It loads the
+//! configuration from the environment (STRIEM_* variables) and from any striem
+//! config file. This is the same as the main daemon. The API service connects
+//! to this process over gRPC.
 
 use std::sync::Arc;
 

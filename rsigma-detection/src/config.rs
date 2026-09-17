@@ -1,8 +1,9 @@
 //! Runtime configuration for the detection service.
 //!
-//! The service is deliberately small: it needs to know where to listen for
-//! Vector ingest, where (optionally) to forward findings, which rules to load,
-//! and how to derive each event's logsource for the conflict-pruning path.
+//! The service is small on purpose. It needs to know four things: where to
+//! listen for the Vector input, where to forward the findings (this is
+//! optional), which rules to load, and how to get each event's logsource for
+//! the conflict-pruning path.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -12,41 +13,45 @@ use rsigma_parser::LogSource;
 
 use crate::logsource_event::LS_PREFIX;
 
-/// Fully-resolved service configuration.
+/// The full service configuration.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Address the Vector ingest gRPC server binds to.
+    /// The address that the Vector input gRPC server binds to.
     pub input: SocketAddr,
-    /// Downstream Vector endpoint findings are forwarded to (e.g.
-    /// `http://vector:6000`). `None` disables egress (findings are logged).
+    /// The downstream Vector endpoint that the service forwards the findings to
+    /// (for example, `http://vector:6000`). `None` stops the output; the service
+    /// then logs the findings.
     pub output: Option<String>,
-    /// Directory or file of Sigma rules to load.
+    /// The directory or file of Sigma rules to load.
     pub rules: PathBuf,
-    /// How many events to gather before a single engine evaluation call.
+    /// The count of events to collect before one engine evaluation call.
     pub batch_size: usize,
-    /// Logsource-conflict pruning configuration (the `logsource_compatible`
-    /// path). Enabled by default — it is the reason this service exists.
+    /// The logsource-conflict pruning configuration (the `logsource_compatible`
+    /// path). It is on by default. It is the reason for this service.
     pub logsource: LogsourceConfig,
 }
 
-/// Configuration for logsource extraction feeding the conflict-based pruning.
+/// The configuration for logsource extraction. It feeds the conflict-based
+/// pruning.
 ///
-/// The logsource is sourced from each event's `metadata["logsource"]` (StrIEM's
-/// convention), not from the log body — see [`crate::logsource_event`]. The
-/// extractor reads it back through the reserved [`LS_PREFIX`] namespace that a
-/// [`LogsourceEvent`](crate::logsource_event::LogsourceEvent) exposes.
+/// The logsource comes from each event's `metadata["logsource"]` (StrIEM's
+/// convention). It does not come from the log body. See
+/// [`crate::logsource_event`]. The extractor reads it through the reserved
+/// [`LS_PREFIX`] namespace that a
+/// [`LogsourceEvent`](crate::logsource_event::LogsourceEvent) gives.
 #[derive(Debug, Clone)]
 pub struct LogsourceConfig {
-    /// When `false`, no [`LogSourceExtractor`] is installed and the engine
-    /// evaluates every rule against every event (no pruning).
+    /// When this is `false`, the service installs no [`LogSourceExtractor`]. The
+    /// engine then evaluates every rule against every event (no pruning).
     pub enabled: bool,
-    /// Overrides which sub-key of `metadata["logsource"]` each dimension reads,
-    /// as a `product=<key>,service=<key>,category=<key>,custom.<dim>=<key>`
-    /// string. Absent dimensions default to `product`/`service`/`category`;
-    /// most deployments leave this unset.
+    /// The override for the sub-key of `metadata["logsource"]` that each
+    /// dimension reads. It is a
+    /// `product=<key>,service=<key>,category=<key>,custom.<dim>=<key>` string.
+    /// An absent dimension uses `product`, `service`, or `category`. Most
+    /// deployments do not set this.
     pub field_map: Option<String>,
-    /// Static logsource applied when the event's metadata does not carry a
-    /// dimension, as a `product=...,service=...,category=...` string.
+    /// The fixed logsource. The service uses it when the event's metadata has no
+    /// dimension. It is a `product=...,service=...,category=...` string.
     pub event_logsource: Option<String>,
 }
 
@@ -61,17 +66,17 @@ impl Default for LogsourceConfig {
 }
 
 impl Config {
-    /// Build the [`LogSourceExtractor`] for the conflict-pruning path, or
-    /// `Ok(None)` when pruning is disabled.
+    /// Makes the [`LogSourceExtractor`] for the conflict-pruning path. Gives
+    /// `Ok(None)` when pruning is off.
     pub fn build_logsource_extractor(&self) -> Result<Option<LogSourceExtractor>, String> {
         if !self.logsource.enabled {
             return Ok(None);
         }
 
         // The extractor reads the logsource through the reserved LS_PREFIX
-        // namespace exposed by `LogsourceEvent`, which maps it back from the
-        // event metadata. `field_map` only customizes which metadata sub-key
-        // feeds each dimension; the standard keys are the defaults.
+        // namespace of `LogsourceEvent`, which maps it back from the event
+        // metadata. `field_map` only sets which metadata sub-key feeds each
+        // dimension. The standard keys are the defaults.
         let (product_key, service_key, category_key, custom) = match &self.logsource.field_map {
             Some(map) => {
                 let parsed = parse_logsource_kv(map)
@@ -139,9 +144,9 @@ pub(crate) struct ParsedLogsource {
     pub custom: Vec<(String, String)>,
 }
 
-/// Parse a logsource key/value option. Bare keys other than the three standard
-/// dimensions are an error; custom dimensions use an explicit `custom.` prefix.
-/// Ported from the rsigma CLI's `parse_logsource_kv`.
+/// Parses a logsource key/value option. A bare key that is not one of the three
+/// standard dimensions is an error. A custom dimension uses the `custom.`
+/// prefix. This function comes from the rsigma CLI's `parse_logsource_kv`.
 pub(crate) fn parse_logsource_kv(input: &str) -> Result<ParsedLogsource, String> {
     let mut out = ParsedLogsource::default();
     for pair in input.split(',') {

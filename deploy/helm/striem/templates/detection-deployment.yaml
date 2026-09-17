@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "striem.detection.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "detection") | nindent 4 }}
+spec:
+  replicas: {{ .Values.detection.replicas }}
+  selector:
+    matchLabels:
+      {{- include "striem.componentSelectorLabels" (dict "root" . "component" "detection") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "striem.componentSelectorLabels" (dict "root" . "component" "detection") | nindent 8 }}
+      {{- with .Values.detection.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "striem.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: detection
+          image: {{ include "striem.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sh", "-c", "mkdir -p {{ .Values.detection.rulesPath | default "/data/detections" }} && exec rsigma-detection"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.detection.grpcPort }}
+            - name: metrics
+              containerPort: {{ .Values.detection.metricsPort }}
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.detection.logLevel | quote }}
+            - name: RSIGMA_DETECTION_INPUT
+              value: "0.0.0.0:{{ .Values.detection.grpcPort }}"
+            # Findings sink: Vector's findings gRPC ingest.
+            - name: RSIGMA_DETECTION_OUTPUT
+              value: "http://{{ include "striem.vector.fullname" . }}:{{ .Values.vector.ports.findings }}"
+            - name: RSIGMA_DETECTION_RULES
+              value: {{ .Values.detection.rulesPath | default "/data/detections" | quote }}
+            - name: RSIGMA_DETECTION_METRICS
+              value: "0.0.0.0:{{ .Values.detection.metricsPort }}"
+            {{- if .Values.otel.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: rules
+              mountPath: {{ .Values.detection.rulesPath | default "/data/detections" }}
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- with .Values.detection.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: rules
+          {{- if .Values.detection.rules.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "striem.detection.fullname" . }}-rules
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.detection.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.detection.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.detection.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- if .Values.detection.rules.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "striem.detection.fullname" . }}-rules
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "detection") | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.detection.rules.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.detection.rules.persistence.size }}
+  {{- if .Values.detection.rules.persistence.storageClass }}
+  storageClassName: {{ .Values.detection.rules.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

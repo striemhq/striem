@@ -1,4 +1,4 @@
-//! Output destination configuration for forwarding detection findings to a
+//! Output destination configuration. StrIEM sends detection findings to a
 //! downstream Vector instance.
 
 use serde::{Deserialize, Serialize};
@@ -7,17 +7,19 @@ use striem_common::prelude::*;
 
 use crate::HostConfig;
 
-/// Vector destination configuration
+/// Vector destination configuration.
 ///
-/// Configures both the destination StrIEM sends detection matches, and the configuration
-/// StrIEM generates for Vector
+/// This struct configures two things. It configures the destination where
+/// StrIEM sends detection matches. It also configures the Vector configuration
+/// that StrIEM makes.
 ///
 /// # Optional Endpoints
-/// - `hec`: Splunk HEC endpoint listener configuration
-///   - **Use Case**: Enables Vector's HEC listener, for receiving events from Splunk
-///     or Github Enterprise Audit logs.
-/// - `http`: HTTP listener configuration
-///   - **Use Case**: Enables Vector's HTTP listener, for receiving events from webhooks
+/// - `hec`: the configuration of the Splunk HEC listener.
+///   - **Use Case**: it starts Vector's HEC listener. The listener receives
+///     events from Splunk or from GitHub Enterprise audit logs.
+/// - `http`: the configuration of the HTTP listener.
+///   - **Use Case**: it starts Vector's HTTP listener. The listener receives
+///     events from webhooks.
 ///
 /// # Example
 /// ```yaml
@@ -28,11 +30,11 @@ use crate::HostConfig;
 /// ```
 #[derive(Debug, Serialize, Clone)]
 pub struct VectorDestinationConfig {
-    /// Primary Vector gRPC endpoint configuration
+    /// The configuration of the primary Vector gRPC endpoint.
     pub cfg: HostConfig,
-    /// Optional Splunk HEC endpoint for Vector to forward events
+    /// The optional Splunk HEC endpoint. Vector sends events to it.
     pub hec: Option<HostConfig>,
-    /// Optional HTTP endpoint for Vector to forward events
+    /// The optional HTTP endpoint. Vector sends events to it.
     pub http: Option<HostConfig>,
     pub api: Option<HostConfig>,
 }

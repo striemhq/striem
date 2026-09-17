@@ -1,0 +1,106 @@
+{{- if .Values.clickhouse.enabled }}
+{{- $ch := include "striem.clickhouse.fullname" . }}
+{{- if and .Values.clickhouse.auth.password (not .Values.clickhouse.auth.existingSecret) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $ch }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "clickhouse") | nindent 4 }}
+type: Opaque
+stringData:
+  password: {{ .Values.clickhouse.auth.password | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $ch }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "clickhouse") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "striem.componentSelectorLabels" (dict "root" . "component" "clickhouse") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "striem.componentSelectorLabels" (dict "root" . "component" "clickhouse") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "striem.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: clickhouse
+          image: "{{ .Values.clickhouse.image.repository }}:{{ .Values.clickhouse.image.tag }}"
+          imagePullPolicy: {{ .Values.clickhouse.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.clickhouse.ports.http }}
+            - name: native
+              containerPort: {{ .Values.clickhouse.ports.native }}
+          env:
+            - name: CLICKHOUSE_USER
+              value: {{ .Values.clickhouse.auth.user | quote }}
+            {{- if or .Values.clickhouse.auth.password .Values.clickhouse.auth.existingSecret }}
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clickhouse.auth.existingSecret | default $ch }}
+                  key: password
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+          {{- with .Values.clickhouse.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.clickhouse.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $ch }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $ch }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "clickhouse") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "striem.componentSelectorLabels" (dict "root" . "component" "clickhouse") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.clickhouse.ports.http }}
+      targetPort: http
+    - name: native
+      port: {{ .Values.clickhouse.ports.native }}
+      targetPort: native
+{{- if .Values.clickhouse.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $ch }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "clickhouse") | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.clickhouse.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.clickhouse.persistence.size }}
+  {{- if .Values.clickhouse.persistence.storageClass }}
+  storageClassName: {{ .Values.clickhouse.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

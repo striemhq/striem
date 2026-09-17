@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "striem.vector.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "vector") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "striem.componentSelectorLabels" (dict "root" . "component" "vector") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "striem.componentSelectorLabels" (dict "root" . "component" "vector") | nindent 8 }}
+      annotations:
+        # Roll the pod when the provider config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/vector-configmap.yaml") . | sha256sum }}
+        {{- with .Values.vector.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "striem.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Populate the OCSF parquet schemas and the OCSF remap VRL. Only Vector
+        # reads these files; the api emits their paths as env placeholders.
+        - name: setup
+          image: {{ .Values.vector.setup.image | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              git clone --depth 1 {{ .Values.vector.setup.schemaRepo | quote }} /schemas
+              git clone --depth 1 {{ .Values.vector.setup.remapRepo | quote }} /remaps
+          volumeMounts:
+            - name: schemas
+              mountPath: /schemas
+            - name: remaps
+              mountPath: /remaps
+      containers:
+        - name: vector
+          image: "{{ .Values.vector.image.repository }}:{{ .Values.vector.image.tag }}"
+          imagePullPolicy: {{ .Values.vector.image.pullPolicy }}
+          args: ["--config", "/etc/vector/vector.yaml"]
+          ports:
+            - name: findings
+              containerPort: {{ .Values.vector.ports.findings }}
+            - name: http-ingest
+              containerPort: {{ .Values.vector.ports.httpIngest }}
+            - name: hec-ingest
+              containerPort: {{ .Values.vector.ports.hecIngest }}
+            - name: vector-api
+              containerPort: {{ .Values.vector.ports.api }}
+            - name: metrics
+              containerPort: {{ .Values.vector.ports.metrics }}
+          env:
+            - name: STRIEM_SCHEMA_DIR
+              value: {{ .Values.vector.schemaDir | quote }}
+            - name: STRIEM_REMAPS
+              value: {{ .Values.vector.remapsDir | quote }}
+            - name: VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION
+              value: "true"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+            - name: schemas
+              mountPath: /schemas
+              readOnly: true
+            - name: remaps
+              mountPath: /remaps
+              readOnly: true
+            - name: storage
+              mountPath: {{ .Values.storage.mountPath }}
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- with .Values.vector.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "striem.vector.fullname" . }}
+        - name: schemas
+          emptyDir: {}
+        - name: remaps
+          emptyDir: {}
+        - name: storage
+          {{- if .Values.storage.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "striem.fullname" . }}-storage
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.vector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

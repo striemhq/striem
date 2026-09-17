@@ -3,6 +3,7 @@ mod alerts;
 mod detections;
 pub mod features;
 mod graph;
+mod observability;
 mod query;
 mod routes;
 mod server;
@@ -30,7 +31,7 @@ use store::Store;
 
 use striem_detection::detections_client::DetectionsClient;
 
-/// gRPC client to the detection microservice's admin API.
+/// The gRPC client to the detection microservice's admin API.
 pub(crate) type DetectionClient = DetectionsClient<tonic::transport::Channel>;
 
 #[cfg(feature = "duckdb")]
@@ -53,9 +54,9 @@ pub(crate) struct ApiState {
 
 #[cfg(feature = "duckdb")]
 pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
-    // Create DuckDB connection pool with metadata caching enabled
-    // Metadata cache significantly improves query performance on large Parquet datasets
-    // by avoiding repeated schema reads
+    // Make the DuckDB connection pool with the metadata cache on. The metadata
+    // cache makes queries on large Parquet datasets much faster, because it does
+    // not read the schema again and again.
     let mut allowed = vec![
         "'application_activity'".to_string(),
         "'discovery'".to_string(),

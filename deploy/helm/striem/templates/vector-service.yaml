@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "striem.vector.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "vector") | nindent 4 }}
+spec:
+  # In-cluster endpoints: findings gRPC ingest (detection/api write here),
+  # Vector's own API, and the Prometheus metrics the dashboard scrapes.
+  type: ClusterIP
+  selector:
+    {{- include "striem.componentSelectorLabels" (dict "root" . "component" "vector") | nindent 4 }}
+  ports:
+    - name: findings
+      port: {{ .Values.vector.ports.findings }}
+      targetPort: findings
+    - name: vector-api
+      port: {{ .Values.vector.ports.api }}
+      targetPort: vector-api
+    - name: metrics
+      port: {{ .Values.vector.ports.metrics }}
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "striem.vector.fullname" . }}-ingest
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "vector") | nindent 4 }}
+spec:
+  # Log ingest endpoints. Set vector.ingest.type to LoadBalancer or NodePort to
+  # accept logs from outside the cluster.
+  type: {{ .Values.vector.ingest.type }}
+  selector:
+    {{- include "striem.componentSelectorLabels" (dict "root" . "component" "vector") | nindent 4 }}
+  ports:
+    - name: http-ingest
+      port: {{ .Values.vector.ports.httpIngest }}
+      targetPort: http-ingest
+    - name: hec-ingest
+      port: {{ .Values.vector.ports.hecIngest }}
+      targetPort: hec-ingest

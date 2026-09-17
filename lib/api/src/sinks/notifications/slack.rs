@@ -1,4 +1,4 @@
-//! Slack notification — posts alerts to a channel via `chat.postMessage`.
+//! Slack notification. It sends alerts to a channel with `chat.postMessage`.
 
 use std::collections::BTreeMap;
 
@@ -25,7 +25,7 @@ impl Slack {
         format!("sink-pre-slack_{}", self.id)
     }
 
-    /// VRL shaping an alert into a Slack `chat.postMessage` payload.
+    /// The VRL that makes a Slack `chat.postMessage` payload from an alert.
     fn vrl(&self) -> String {
         format!(
             r#"

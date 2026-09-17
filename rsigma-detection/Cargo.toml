@@ -19,6 +19,7 @@ path = "src/bin/rsigma-detection.rs"
 # StrIEM building blocks (reused as-is).
 striem_common = { path = "../lib/common" }
 striem_vector = { path = "../lib/vector" }
+striem_telemetry = { path = "../lib/telemetry" }
 # Detection-admin gRPC protocol (List/Get/Create/SetEnabled), served alongside
 # the Vector ingest so the api/UI rule proxy works against this engine too.
 striem_detection = { path = "../lib/detection" }

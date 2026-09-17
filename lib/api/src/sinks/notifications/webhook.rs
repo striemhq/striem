@@ -1,4 +1,5 @@
-//! Webhook notification — POSTs each alert as JSON to an arbitrary URL.
+//! Webhook notification. It sends each alert as JSON to any URL with an HTTP
+//! POST.
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,7 @@ use crate::sinks::{AuthConfig, Codec, Encoding, Sink, SinkCategory, SinkType, AL
 #[derive(Serialize, Deserialize, Clone)]
 pub struct WebhookSettings {
     pub url: String,
-    /// Optional bearer token sent as `Authorization: Bearer …`.
+    /// The optional bearer token. The sink sends it as `Authorization: Bearer …`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 }

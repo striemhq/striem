@@ -1,9 +1,10 @@
-//! Persistence abstraction for sources and sinks.
+//! Storage layer for sources and sinks.
 //!
-//! [`Store`] is the repository trait the API state depends on to load and
-//! persist its configured [`Source`]s and [`Sink`]s. Backends implement only
-//! the operations they support — the default methods are no-ops so
-//! [`NullStore`] (used when no database is configured) needs no code at all.
+//! [`Store`] is the repository trait. The API state uses it to load and save
+//! the configured [`Source`]s and [`Sink`]s. A backend implements only the
+//! operations that it supports. The default methods do nothing. Thus
+//! [`NullStore`] needs no code. The service uses [`NullStore`] when you
+//! configure no database.
 
 use std::sync::Arc;
 
@@ -12,10 +13,11 @@ use anyhow::Result;
 use crate::sinks::Sink;
 use crate::sources::Source;
 
-/// Backing store for the API's sources and sinks.
+/// The store for the API's sources and sinks.
 ///
-/// All methods default to no-ops so a backend can implement only what it
-/// supports and callers can treat "no database" uniformly.
+/// By default all the methods do nothing. Thus a backend implements only the
+/// operations that it supports. Also, a caller processes the "no database" case
+/// in the same way each time.
 pub(crate) trait Store: Send + Sync {
     fn load_sources(&self) -> Result<Vec<Box<dyn Source>>> {
         Ok(Vec::new())
@@ -33,22 +35,24 @@ pub(crate) trait Store: Send + Sync {
     fn add_sink(&self, _sink: &dyn Sink) -> Result<()> {
         Ok(())
     }
-    // No delete-sink endpoint yet; kept for symmetry with sources.
+    // There is no delete-sink endpoint yet. This method stays to match the
+    // sources.
     #[allow(dead_code)]
     fn remove_sink(&self, _id: &str) -> Result<()> {
         Ok(())
     }
 }
 
-/// A store that persists nothing, used when no database is configured.
+/// A store that saves nothing. The service uses it when you configure no
+/// database.
 pub(crate) struct NullStore;
 
 impl Store for NullStore {}
 
-/// Build the [`Store`] for the given (optional) database pool.
+/// Makes the [`Store`] for the optional database pool.
 ///
-/// Falls back to [`NullStore`] when there is no pool or the backing store
-/// fails to initialise.
+/// This function uses [`NullStore`] when there is no pool. It also uses
+/// [`NullStore`] when the store does not start correctly.
 pub(crate) fn open(db: &Option<crate::Pool>) -> Arc<dyn Store> {
     let _ = db;
 
@@ -84,7 +88,7 @@ mod duckdb_store {
             type TEXT,
             config JSON);"#;
 
-    /// DuckDB-backed [`Store`] sharing the API's connection pool.
+    /// A [`Store`] that uses DuckDB. It shares the API's connection pool.
     pub(crate) struct DuckdbStore {
         pool: Pool,
     }

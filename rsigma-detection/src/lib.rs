@@ -10,23 +10,26 @@
 //!   Vector ◀─gRPC PushEvents── [striem_vector client] ◀── OCSF Detection Findings (2004)
 //! ```
 //!
-//! It reuses StrIEM's Vector ingest/egress ([`striem_vector`]) and event model
-//! ([`striem_common`]) unchanged, but replaces the `sigmars` detection engine
-//! with rsigma-runtime's [`LogProcessor`](rsigma_runtime::LogProcessor) wrapping
-//! a [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). Every match becomes an
-//! OCSF `Detection Finding` (class_uid 2004) pushed back to a downstream Vector.
+//! This crate uses StrIEM's Vector input and output ([`striem_vector`]) and its
+//! event model ([`striem_common`]) with no change. But it replaces the `sigmars`
+//! detection engine with rsigma-runtime's
+//! [`LogProcessor`](rsigma_runtime::LogProcessor) around a
+//! [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). Each match becomes an OCSF
+//! `Detection Finding` (class_uid 2004). The crate sends the finding to a
+//! downstream Vector.
 //!
 //! ## The pruning path
 //!
-//! StrIEM's `detection` service selects rules with a logsource **subset**
-//! filter (a rule runs only if its logsource ⊆ the event's). This service
-//! instead installs a [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor)
-//! on the engine, selecting rsigma's **conflict-based** `logsource_compatible`
-//! evaluation: a rule is skipped only when a logsource dimension it declares
-//! *conflicts* with the event's extracted logsource. Rules with no conflict —
-//! and all logsource-less rules — still run, and an event with no extractable
-//! logsource evaluates against everything (fail-open). See [`config`] for how
-//! the extractor is configured.
+//! StrIEM's `detection` service selects rules with a logsource **subset** filter
+//! (a rule runs only if its logsource is a subset of the event's logsource).
+//! This service installs a
+//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) on the engine in
+//! place of the subset filter. This selects rsigma's **conflict-based**
+//! `logsource_compatible` evaluation. The engine skips a rule only when a
+//! logsource dimension of the rule *conflicts* with the event's extracted
+//! logsource. A rule with no conflict still runs. A rule with no logsource also
+//! runs. An event with no logsource evaluates against all the rules (fail-open).
+//! See [`config`] for the configuration of the extractor.
 
 pub mod admin;
 pub mod config;

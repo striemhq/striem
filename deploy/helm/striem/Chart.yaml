@@ -1,0 +1,19 @@
+apiVersion: v2
+name: striem
+description: >-
+  StrIEM — an open-source SIEM powered by Vector. This chart deploys the API/UI,
+  the rsigma detection engine, and Vector, with an optional ClickHouse.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/striemhq/striem
+sources:
+  - https://github.com/striemhq/striem
+keywords:
+  - siem
+  - sigma
+  - detection
+  - security
+  - vector
+maintainers:
+  - name: StrIEM

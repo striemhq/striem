@@ -1,4 +1,4 @@
-use crate::{ApiState, actions, alerts, detections, sinks, sources, vector};
+use crate::{ApiState, actions, alerts, detections, observability, sinks, sources, vector};
 
 use crate::query;
 
@@ -15,6 +15,8 @@ pub fn create_router() -> Router<ApiState> {
         .nest("/api/1/query", query::create_router())
         .nest("/api/1/destinations", sinks::destinations::create_router())
         .nest("/api/1/notifications", sinks::notifications::create_router())
+        // `/metrics` (Prometheus) and `/api/1/dashboard` (aggregated metrics).
+        .merge(observability::create_router())
 }
 
 async fn health() -> StatusCode {

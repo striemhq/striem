@@ -8,3 +8,4 @@ venv
 **/node_modules
 ui/out
 ui/.next
+.cargo

@@ -1,14 +1,16 @@
-//! End-to-end proof that rsigma-detection prunes on the conflict-based
-//! `logsource_compatible` path, with the logsource taken from each event's
-//! `metadata["logsource"]` (StrIEM's convention) — not from the log body.
+//! An end-to-end test that rsigma-detection prunes on the conflict-based
+//! `logsource_compatible` path. The logsource comes from each event's
+//! `metadata["logsource"]` (StrIEM's convention). It does not come from the log
+//! body.
 //!
-//! Three rules with identical detections but different logsources are loaded;
-//! a single event whose metadata declares `product: windows` is evaluated. The
-//! Windows rule and the logsource-less rule fire; the Linux rule is pruned
-//! because its declared product conflicts with the event's. An event whose
-//! metadata carries no logsource fails open (all three fire). Driven through
-//! the real `DetectionHandler` so the metadata→logsource→extractor bridge is
-//! exercised exactly as in production.
+//! The test loads three rules. The rules have the same detection but different
+//! logsources. The test evaluates one event whose metadata has
+//! `product: windows`. The Windows rule fires. The rule with no logsource also
+//! fires. The engine prunes the Linux rule, because its product conflicts with
+//! the event's product. An event with no logsource in its metadata fails open;
+//! then all three rules fire. The test runs through the real `DetectionHandler`.
+//! Thus it exercises the metadata → logsource → extractor path in the same way
+//! as production.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -61,8 +63,8 @@ fn write_rules(dir: &std::path::Path) {
     std::fs::write(dir.join("any.yml"), NO_LOGSOURCE_RULE).unwrap();
 }
 
-/// Build a processor the way `DetectionService::new` does: install the
-/// logsource extractor from config, then load rules.
+/// Makes a processor in the same way as `DetectionService::new`. It installs the
+/// logsource extractor from the config, then it loads the rules.
 fn processor_for(dir: &std::path::Path, logsource: LogsourceConfig) -> Arc<LogProcessor> {
     let config = Config {
         input: "0.0.0.0:6000".parse().unwrap(),
@@ -83,7 +85,7 @@ fn processor_for(dir: &std::path::Path, logsource: LogsourceConfig) -> Arc<LogPr
     Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)))
 }
 
-/// A matching event whose logsource (if any) is carried in metadata.
+/// A matching event. Its logsource, if there is one, is in the metadata.
 fn event(logsource: Option<serde_json::Value>) -> Event {
     let mut metadata = HashMap::new();
     if let Some(ls) = logsource {
@@ -96,7 +98,8 @@ fn event(logsource: Option<serde_json::Value>) -> Event {
     }
 }
 
-/// Run one event through the handler and collect the titles of fired rules.
+/// Runs one event through the handler. Collects the titles of the rules that
+/// fired.
 async fn fired_titles(processor: Arc<LogProcessor>, event: Event) -> Vec<String> {
     let (src_tx, src_rx) = mpsc::channel::<Vec<Event>>(4);
     let (dest_tx, mut dest_rx) = broadcast::channel::<Arc<Vec<Event>>>(4);
@@ -126,7 +129,8 @@ async fn conflicting_logsource_rule_is_pruned() {
     write_rules(dir.path());
     let processor = processor_for(dir.path(), LogsourceConfig::default());
 
-    // metadata.logsource = {product: windows}: Windows + logsource-less fire.
+    // metadata.logsource = {product: windows}: the Windows rule and the rule
+    // with no logsource fire.
     let fired = fired_titles(processor, event(Some(json!({ "product": "windows" })))).await;
     assert_eq!(
         fired,
@@ -141,7 +145,7 @@ async fn missing_logsource_fails_open() {
     write_rules(dir.path());
     let processor = processor_for(dir.path(), LogsourceConfig::default());
 
-    // No logsource in metadata: fail-open, every rule evaluates.
+    // No logsource in the metadata: fail-open, so every rule evaluates.
     let fired = fired_titles(processor, event(None)).await;
     assert_eq!(
         fired,
@@ -166,7 +170,8 @@ async fn pruning_disabled_runs_every_rule() {
         },
     );
 
-    // With no extractor installed, even a conflicting Linux rule runs.
+    // With no extractor installed, the Linux rule runs too, even though it
+    // conflicts.
     let fired = fired_titles(processor, event(Some(json!({ "product": "windows" })))).await;
     assert_eq!(
         fired,

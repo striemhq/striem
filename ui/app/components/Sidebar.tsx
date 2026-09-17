@@ -1,5 +1,7 @@
 "use client";
 
+import ThemeToggle from "@components/ThemeToggle";
+
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -17,6 +19,10 @@ interface Section {
 }
 
 const sections: Section[] = [
+  {
+    label: "Observability",
+    tabs: [{ id: "dashboard", label: "Dashboard", icon: "📊" }],
+  },
   {
     label: "Data",
     tabs: [
@@ -62,6 +68,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           </div>
         ))}
       </div>
+      <ThemeToggle />
     </nav>
   );
 }

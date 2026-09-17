@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "striem.vector.fullname" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "vector") | nindent 4 }}
+data:
+  # Vector loads its full config from the api's HTTP provider. `interpolate_env`
+  # lets Vector replace the ${STRIEM_SCHEMA_DIR} / ${STRIEM_REMAPS} placeholders
+  # that the api emits in the generated config with the paths set on this pod.
+  vector.yaml: |
+    provider:
+      type: http
+      url: http://{{ include "striem.api.fullname" . }}:{{ .Values.api.service.port }}/vector
+      interpolate_env: true

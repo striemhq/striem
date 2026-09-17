@@ -38,8 +38,9 @@ pub enum Decoding {
     Json,
 }
 
-/// The Sigma logsource taxonomy for a source, inserted into event metadata so
-/// detection rules can be scoped to the originating product/service.
+/// The Sigma logsource taxonomy of a source. The service puts it into the event
+/// metadata. Thus a detection rule can apply to only the correct product or
+/// service.
 #[derive(Default)]
 pub struct Logsource {
     pub vendor: Option<String>,
@@ -63,13 +64,12 @@ impl Logsource {
     }
 }
 
-/// A data source defines its own Sigma taxonomy classification, its Vector
-/// `source` configuration, and any `transform`s needed to normalize events
-/// into OCSF.
+/// A data source. It sets its own Sigma taxonomy, its Vector `source`
+/// configuration, and the `transform`s that normalize events into OCSF.
 ///
-/// Each source contributes a chain of components whose terminal node is
-/// `ocsf-<type>_<id>` (see [`Source::output`]); [`Source::pipeline`] produces
-/// those components, and the default implementation builds the standard
+/// Each source adds a chain of components. The last node of the chain is
+/// `ocsf-<type>_<id>` (see [`Source::output`]). [`Source::pipeline`] makes these
+/// components. The default implementation builds the standard
 /// `source -> [pre ->] logsource -> ocsf` chain.
 pub trait Source: Send + Sync {
     fn id(&self) -> String;
@@ -77,46 +77,46 @@ pub trait Source: Send + Sync {
     /// The Vector source type.
     fn sourcetype(&self) -> SourceType;
 
-    /// A human friendly name.
+    /// A clear name.
     fn name(&self) -> String {
         self.sourcetype().to_string()
     }
 
-    /// Sigma logsource taxonomy for this source.
+    /// The Sigma logsource taxonomy of this source.
     fn logsource(&self) -> Logsource {
         Logsource::default()
     }
 
-    /// Vector source configuration.
+    /// The Vector source configuration.
     fn config(&self) -> &dyn es::Serialize;
 
-    /// An optional preprocessing transform inserted between the raw source and
-    /// the logsource-tagging step; the standard pipeline wires its input to the
+    /// An optional preprocessing transform. It comes between the raw source and
+    /// the logsource-tag step. The standard pipeline connects its input to the
     /// source.
     fn preprocess(&self) -> Option<Transform> {
         None
     }
 
-    /// The node downstream consumers read this source's normalized OCSF events
-    /// from: `ocsf-<type>_<id>`.
+    /// The node where downstream consumers read this source's normalized OCSF
+    /// events: `ocsf-<type>_<id>`.
     fn output(&self) -> String {
         naming::ocsf(self.sourcetype(), &self.id())
     }
 
-    /// The Vector components this source contributes to the graph.
+    /// The Vector components that this source adds to the graph.
     fn pipeline(&self, ctx: &RenderCtx) -> anyhow::Result<Pipeline> {
         standard_pipeline(self, ctx)
     }
 }
 
-/// The VRL that tags an event with its logical source id and Sigma logsource.
+/// The VRL that tags an event with its source id and its Sigma logsource.
 fn logsource_meta(source_id: &str, logsource: &Logsource) -> String {
     let sigma = json!({ "logsource": logsource.to_map() });
     format!("%source_id = \"{}\"\n%sigma = {}\n", source_id, sigma)
 }
 
-/// Build the standard `source -> [pre ->] logsource -> ocsf` chain used by
-/// every source that ingests through its own Vector source component.
+/// Builds the standard `source -> [pre ->] logsource -> ocsf` chain. Every
+/// source that inputs through its own Vector source component uses this chain.
 fn standard_pipeline<S: Source + ?Sized>(
     src: &S,
     ctx: &RenderCtx,
@@ -133,7 +133,7 @@ fn standard_pipeline<S: Source + ?Sized>(
         .sources
         .insert(source_id.clone(), component(src.config())?);
 
-    // Optional preprocessing sits between the source and the logsource tag.
+    // The optional preprocessing comes between the source and the logsource tag.
     let tagged_input = match src.preprocess() {
         Some(pre) => {
             let pre_id = naming::pre(&sourcetype, &id);
@@ -339,11 +339,11 @@ fn http_pipeline_terminates_at_ocsf_node() {
     };
     let pipeline = source.pipeline(&ctx).unwrap();
 
-    // The chain terminates at the promised ocsf-<type>_<id> node...
+    // The chain ends at the ocsf-<type>_<id> node...
     assert_eq!(source.output(), "ocsf-http_server_test_http");
     assert!(pipeline.transforms.contains_key(&source.output()));
 
-    // ...and all HTTP sources share a single, de-duplicating listener.
+    // ...and all the HTTP sources share one listener, which removes duplicates.
     assert!(pipeline.sources.contains_key(http::HTTP_LISTENER));
 }
 
@@ -388,14 +388,14 @@ fn merged_graph_dedupes_http_listener_and_serializes() {
         cfg.merge(source.pipeline(&ctx).unwrap());
     }
 
-    // Two HTTP sources, but exactly one shared listener.
+    // There are two HTTP sources, but only one shared listener.
     assert!(cfg.sources.contains_key(http::HTTP_LISTENER));
     assert!(cfg.sources.contains_key("source-aws_cloudtrail_aws1"));
     assert!(cfg.transforms.contains_key("ocsf-http_server_gh"));
     assert!(cfg.transforms.contains_key("ocsf-http_server_ci"));
     assert!(cfg.transforms.contains_key("ocsf-okta_okta1"));
 
-    // The whole document round-trips through TOML.
+    // The full document goes to TOML and back with no change.
     let rendered = toml::to_string(&cfg).unwrap();
     toml::from_str::<toml::Value>(&rendered).unwrap();
     println!("{}", rendered);

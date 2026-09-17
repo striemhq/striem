@@ -1,8 +1,8 @@
 //! Email notification.
 //!
-//! Vector has no native SMTP sink, so email is delivered by POSTing to an
-//! email-provider HTTP API (e.g. SendGrid/Mailgun-style endpoint). A transform
-//! shapes each alert into a `{to, from, subject, body}` payload.
+//! Vector has no SMTP sink. Thus the sink sends email with an HTTP POST to an
+//! email-provider HTTP API (for example, a SendGrid or Mailgun endpoint). A
+//! transform makes a `{to, from, subject, body}` payload from each alert.
 
 use std::collections::BTreeMap;
 
@@ -13,13 +13,14 @@ use crate::sinks::{AuthConfig, Codec, Encoding, Sink, SinkCategory, SinkType, AL
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EmailSettings {
-    /// Email-provider HTTP API endpoint the payload is POSTed to.
+    /// The email-provider HTTP API endpoint. The sink sends the payload to it
+    /// with an HTTP POST.
     pub endpoint: String,
     pub to: String,
     pub from: String,
     #[serde(default = "default_subject")]
     pub subject: String,
-    /// Optional bearer token for the provider API.
+    /// The optional bearer token for the provider API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 }

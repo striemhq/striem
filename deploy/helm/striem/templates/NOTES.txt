@@ -1,0 +1,44 @@
+StrIEM is installed.
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+Services:
+  api        {{ include "striem.api.fullname" . }}:{{ .Values.api.service.port }}        (HTTP / UI)
+  detection  {{ include "striem.detection.fullname" . }}:{{ .Values.detection.grpcPort }}  (OCSF gRPC ingest)
+  vector     {{ include "striem.vector.fullname" . }}                         (in-cluster: findings/api/metrics)
+  vector     {{ include "striem.vector.fullname" . }}-ingest                  (log ingest: http/hec)
+{{- if .Values.clickhouse.enabled }}
+  clickhouse {{ include "striem.clickhouse.fullname" . }}:{{ .Values.clickhouse.ports.http }}
+{{- end }}
+
+Open the UI:
+{{- if .Values.ingress.enabled }}
+
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+{{- else if eq .Values.api.service.type "LoadBalancer" }}
+
+  Wait for the load balancer address:
+    kubectl get svc -n {{ .Release.Namespace }} {{ include "striem.api.fullname" . }} -w
+{{- else }}
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "striem.api.fullname" . }} {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+
+  Then browse to http://localhost:{{ .Values.api.service.port }}/ui
+{{- end }}
+
+Send logs to Vector's ingest service (in-cluster):
+  http://{{ include "striem.vector.fullname" . }}-ingest:{{ .Values.vector.ports.httpIngest }}   (HTTP)
+  http://{{ include "striem.vector.fullname" . }}-ingest:{{ .Values.vector.ports.hecIngest }}   (Splunk HEC)
+
+{{- if not .Values.storage.persistence.enabled }}
+
+WARNING: storage.persistence is disabled. Parquet data is ephemeral and is lost
+when the pods restart. Enable it for real deployments.
+{{- end }}
+{{- if and (eq .Values.storage.persistence.accessMode "ReadWriteOnce") (gt (int .Values.api.replicas) 0) }}
+
+NOTE: the shared storage volume uses ReadWriteOnce, so the api and vector pods
+must schedule onto the same node. For multi-node scheduling, use a
+ReadWriteMany storage class (set storage.persistence.accessMode).
+{{- end }}

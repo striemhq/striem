@@ -1,10 +1,11 @@
-//! Vector gRPC protocol implementation for StrIEM.
+//! Vector gRPC protocol for StrIEM.
 //!
-//! This crate owns Vector's event protocol ([`event`]/[`vector`]) for ingesting
-//! and forwarding logs. It provides the reusable protocol pieces ([`Server`],
-//! [`Client`], the generated service stubs); running a service is the caller's
-//! responsibility. The detection-admin protocol lives in the `striem_detection`
-//! crate, which is unrelated to this Vector proxy logic.
+//! This crate holds Vector's event protocol ([`event`]/[`vector`]). The
+//! protocol receives logs and forwards logs. This crate gives the protocol
+//! parts that you use again: [`Server`], [`Client`], and the generated service
+//! stubs. The caller must run the service. The detection-admin protocol is in
+//! the `striem_detection` crate. That protocol is not part of this Vector proxy
+//! logic.
 
 mod convert;
 

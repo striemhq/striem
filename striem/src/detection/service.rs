@@ -1,14 +1,14 @@
 //! Detection microservice runtime.
 //!
-//! Wires together everything needed to *run* the detection service:
-//! - the Vector gRPC listener (event ingestion, from `striem_vector`),
-//! - the Sigma [`DetectionHandler`] that turns events into OCSF findings,
-//! - an optional downstream Vector client that forwards those findings,
+//! This module connects all the parts to *run* the detection service:
+//! - the Vector gRPC listener (event input, from `striem_vector`),
+//! - the Sigma [`DetectionHandler`] that changes events into OCSF findings,
+//! - an optional downstream Vector client that forwards these findings,
 //! - the detection-admin gRPC service ([`DetectionAdmin`]).
 //!
-//! The Vector ingestion service and the admin service are mounted on a single
-//! [`tonic::transport::Server`] bound to the configured input address, so the
-//! API service reaches rule administration at the same endpoint Vector pushes to.
+//! One [`tonic::transport::Server`] holds the Vector input service and the admin
+//! service. This server binds the configured input address. Thus the API service
+//! reaches the rule administration at the same endpoint that Vector sends to.
 
 use std::sync::Arc;
 
@@ -26,27 +26,29 @@ use striem_vector::{Client as VectorClient, Server as VectorServer};
 
 use crate::detection::{DetectionHandler, admin::DetectionAdmin};
 
-/// The runnable detection microservice.
+/// The detection microservice that you can run.
 pub struct DetectionService {
     detections: Arc<RwLock<SigmaCollection>>,
     config: Arc<ArcSwap<StrIEMConfig>>,
-    /// Broadcast channel carrying detection findings to the downstream client.
+    /// The broadcast channel that sends the detection findings to the downstream
+    /// client.
     events: broadcast::Sender<Arc<Vec<Event>>>,
     sys: broadcast::Sender<SysMessage>,
 }
 
 impl DetectionService {
-    /// Load configured Sigma rules and prepare the service.
+    /// Loads the configured Sigma rules and prepares the service.
     ///
-    /// Rules are loaded and compiled up front so invalid rule sets fail fast,
-    /// mirroring the previous in-process behaviour.
+    /// The function loads and compiles the rules at the start. Thus a bad rule
+    /// set fails immediately. This is the same as the earlier in-process
+    /// behavior.
     pub async fn new(
         config: Arc<ArcSwap<StrIEMConfig>>,
         sys: broadcast::Sender<SysMessage>,
     ) -> Result<Self> {
         let mut detections = SigmaCollection::default();
 
-        // Support both a single directory and a list of directories.
+        // Accept one directory or a list of directories.
         let count = match &config.load().detections {
             Some(StringOrList::String(path)) => detections
                 .load_from_dir(path)
@@ -66,7 +68,8 @@ impl DetectionService {
             }
         }?;
 
-        // Pre-compile/index rules so runtime matching and later add() calls work.
+        // Compile and index the rules first. Thus the match at runtime and the
+        // later add() calls work.
         detections.with_backend()?;
         info!("... loaded {} Sigma detections", count);
 
@@ -78,7 +81,7 @@ impl DetectionService {
         })
     }
 
-    /// Run the service until a shutdown signal is broadcast.
+    /// Runs the service until a shutdown signal comes.
     pub async fn run(&self) -> Result<()> {
         let config = self.config.load();
 
@@ -86,7 +89,7 @@ impl DetectionService {
 
         let mut server = VectorServer::new();
 
-        // Detection pipeline: ingested events -> Sigma matching -> findings channel.
+        // The detection pipeline: input events -> Sigma match -> findings channel.
         let src = server.subscribe()?;
         let mut handler = DetectionHandler::new(
             src,
@@ -98,12 +101,12 @@ impl DetectionService {
             handler.run().await;
         });
 
-        // Forward findings to a downstream Vector instance, if configured.
+        // Send the findings to a downstream Vector instance, if you configure one.
         if let Some(ref vector) = config.output {
             self.run_downstream(&vector.cfg.url());
         }
 
-        // Mount both the Vector ingestion service and the admin service on one server.
+        // Put the Vector input service and the admin service on one server.
         let vector_service = server.service()?;
         let admin =
             DetectionAdmin::new(self.detections.clone(), self.config.clone());
@@ -132,10 +135,10 @@ impl DetectionService {
         Ok(())
     }
 
-    /// Spawn a resilient downstream Vector client that forwards detection findings.
+    /// Starts a downstream Vector client that forwards the detection findings.
     ///
-    /// Retries with exponential backoff so transient network failures or Vector
-    /// restarts don't tear down the service.
+    /// The client tries again with exponential backoff. Thus a short network
+    /// failure or a Vector restart does not stop the service.
     fn run_downstream(&self, url: &str) {
         let url = url.to_string();
         let rx = self.events.subscribe();

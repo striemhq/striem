@@ -1,0 +1,24 @@
+[package]
+name = "striem_telemetry"
+version = "0.1.0"
+edition = "2024"
+
+# Shared observability for the StrIEM services: OpenTelemetry traces/spans
+# (exported over OTLP when configured) and Prometheus-format metrics for
+# latency and system resources.
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+log.workspace = true
+tokio.workspace = true
+
+prometheus = "0.13"
+sysinfo = "0.33"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "tracing-log"] }
+tracing-opentelemetry = "0.28"
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic", "trace"] }

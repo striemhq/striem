@@ -122,8 +122,8 @@ impl Source for AwsCloudtrail {
         }
     }
 
-    /// CloudTrail delivers events wrapped in a `Records` array; unwrap it
-    /// before normalization.
+    /// CloudTrail sends events in a `Records` array. Take the events out of the
+    /// array before normalization.
     fn preprocess(&self) -> Option<Transform> {
         Some(Transform::remap(". = .Records"))
     }

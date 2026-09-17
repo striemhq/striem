@@ -1,6 +1,7 @@
-//! Vector output sinks: **destinations** (archive the `ocsf-*` event stream) and
-//! **notifications** (deliver `alerts`). Both are [`Sink`]s persisted in the
-//! `sinks` table and distinguished by [`SinkCategory`].
+//! Vector output sinks. There are two types. A **destination** keeps the
+//! `ocsf-*` event stream. A **notification** sends `alerts`. Both types are a
+//! [`Sink`]. The service saves them in the `sinks` table. [`SinkCategory`]
+//! shows the type of each sink.
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -13,18 +14,20 @@ use crate::graph::{Pipeline, RenderCtx, Transform, component};
 pub mod destinations;
 pub mod notifications;
 
-/// Vector input the destination sinks archive: every normalized OCSF event.
+/// The Vector input that the destination sinks keep: every normalized OCSF
+/// event.
 //pub const OCSF_INPUT: &str = "ocsf-*";
 pub const OCSF_INPUT: &str = "final-ocsf";
-/// Vector input the notification sinks deliver: detection findings (class 2004).
+/// The Vector input that the notification sinks send: detection findings
+/// (class 2004).
 pub const ALERTS_INPUT: &str = "alerts";
 
-/// Which UI section (and route namespace) a sink belongs to.
+/// The type of a sink. This sets the UI section and the route namespace.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SinkCategory {
-    /// Archives the OCSF event stream (Local Files, S3, Clickhouse).
+    /// Keeps the OCSF event stream (Local Files, S3, Clickhouse).
     Destination,
-    /// Delivers alerts (Slack, Email, Webhook).
+    /// Sends alerts (Slack, Email, Webhook).
     Notification,
 }
 
@@ -63,9 +66,10 @@ pub struct AuthConfig {
     pub token: String,
 }
 
-/// How Vector's parquet encoder handles event fields absent from the schema.
-/// `auto_infer` derives the schema from the batch, so no `schema_file` is
-/// required — the right default for the heterogeneous `ocsf-*` stream.
+/// The way that Vector's parquet encoder processes an event field that is not
+/// in the schema. `auto_infer` makes the schema from the batch, so it does not
+/// need a `schema_file`. This is the correct default for the mixed `ocsf-*`
+/// stream.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ParquetSchemaMode {
@@ -75,7 +79,8 @@ pub enum ParquetSchemaMode {
     AutoInfer,
 }
 
-/// Batch (columnar) encoder for file destinations — Vector's `batch_encoding`.
+/// The batch (columnar) encoder for file destinations. This is Vector's
+/// `batch_encoding`.
 #[derive(Serialize, Clone)]
 #[serde(tag = "codec", rename_all = "snake_case")]
 pub enum BatchEncoding {
@@ -87,7 +92,7 @@ pub enum BatchEncoding {
     },
 }
 
-/// Batching behaviour applied when a columnar `batch_encoding` is set.
+/// The batch behavior. It applies when you set a columnar `batch_encoding`.
 #[derive(Serialize, Clone)]
 pub struct FileBatch {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,8 +114,8 @@ pub struct BasicAuth {
     pub strategy: Option<String>
 }
 
-/// A Vector sink body. `tag = "type"` emits the Vector sink type name
-/// (`http`, `aws_s3`, `clickhouse`, `file`, …).
+/// A Vector sink body. `tag = "type"` writes the name of the Vector sink type
+/// (`http`, `aws_s3`, `clickhouse`, `file`, and others).
 #[derive(Serialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SinkType {
@@ -134,11 +139,11 @@ pub enum SinkType {
     Blackhole {
         inputs: Vec<String>,
     },
-    /// Local file sink (the Local Files / parquet destination).
+    /// The local file sink (the Local Files / parquet destination).
     ///
-    /// `encoding` is required by Vector's schema but ignored once
-    /// `batch_encoding` is set: events are batched and written as columnar
-    /// (Parquet) files instead.
+    /// Vector's schema needs the `encoding` field. But Vector ignores it after
+    /// you set `batch_encoding`. Vector then makes batches of events. It writes
+    /// them as columnar (Parquet) files.
     File {
         path: String,
         encoding: Encoding,
@@ -147,7 +152,7 @@ pub enum SinkType {
         #[serde(skip_serializing_if = "Option::is_none")]
         batch: Option<FileBatch>,
     },
-    /// AWS S3 destination.
+    /// The AWS S3 destination.
     AwsS3 {
         bucket: String,
         region: String,
@@ -158,7 +163,7 @@ pub enum SinkType {
         #[serde(skip_serializing_if = "Option::is_none")]
         auth: Option<S3Auth>,
     },
-    /// Clickhouse destination.
+    /// The Clickhouse destination.
     Clickhouse {
         endpoint: String,
         database: String,
@@ -170,32 +175,32 @@ pub enum SinkType {
 }
 
 pub trait Sink: Send + Sync {
-    /// Stable resource id (also the persistence key).
+    /// The stable resource id. This is also the key for storage.
     fn id(&self) -> String;
 
-    /// Whether this sink is a destination or a notification.
+    /// Tells if this sink is a destination or a notification.
     fn category(&self) -> SinkCategory;
 
     fn config(&self) -> SinkType;
 
-    /// Discriminator used to persist and reconstruct this sink.
+    /// The type name. The service uses it to save and rebuild this sink.
     fn typename(&self) -> String;
 
-    /// Human-friendly label for the UI list.
+    /// A clear name for the UI list.
     fn name(&self) -> String {
         self.typename()
     }
 
-    /// The settings needed to reconstruct this sink from storage.
+    /// The settings that the service needs to rebuild this sink from storage.
     fn settings(&self) -> serde_json::Value;
 
-    /// Transforms this sink prepends ahead of the sink component (its config's
-    /// `inputs` should reference them).
+    /// The transforms that this sink puts before the sink component. The
+    /// `inputs` of its configuration must point to them.
     fn transforms(&self) -> BTreeMap<String, Transform> {
         BTreeMap::new()
     }
 
-    /// The Vector components this sink contributes to the graph.
+    /// The Vector components that this sink adds to the graph.
     fn pipeline(&self, _ctx: &RenderCtx) -> anyhow::Result<Pipeline> {
         let mut pipeline = Pipeline::default();
         let component_id = format!("sink-{}_{}", self.typename(), self.id());
@@ -241,7 +246,7 @@ impl TryInto<Box<dyn Sink>> for ExistingSink {
     }
 }
 
-/// Shared list handler: the persisted sinks in `category` as
+/// The shared list handler. It gives the saved sinks in `category` as
 /// `{ id, sinktype, name, config }`.
 pub(crate) async fn list_by_category(
     state: &ApiState,
@@ -264,7 +269,7 @@ pub(crate) async fn list_by_category(
     )
 }
 
-/// Shared delete handler for a sink id within a category.
+/// The shared delete handler for a sink id in a category.
 pub(crate) async fn delete(
     state: &ApiState,
     category: SinkCategory,
@@ -289,7 +294,8 @@ pub(crate) async fn delete(
     Ok(axum::Json(()))
 }
 
-/// Shared add: persist the sink, push it into live state, return its id.
+/// The shared add handler. It saves the sink, adds it to the live state, and
+/// gives its id.
 pub(crate) async fn add(
     state: &ApiState,
     sink: Box<dyn Sink>,
@@ -332,8 +338,9 @@ mod tests {
             assert!(matches!(s.category(), SinkCategory::Destination));
             let pipeline = s.pipeline(&RenderCtx::default()).unwrap();
 
-            // Every destination archives the OCSF stream, either directly or via
-            // a prepended transform (Local Files fans out; Clickhouse remaps).
+            // Every destination keeps the OCSF stream. It reads the stream
+            // directly or through a transform that comes before it. (Local
+            // Files makes many sinks; Clickhouse remaps.)
             assert!(!pipeline.sinks.is_empty());
             assert!(
                 pipeline
@@ -348,23 +355,25 @@ mod tests {
             cfg.merge(pipeline);
         }
 
-        // The whole document round-trips through TOML.
+        // The full document goes to TOML and back with no change.
         let rendered = toml::to_string(&cfg).unwrap();
         toml::from_str::<toml::Value>(&rendered).unwrap();
     }
 
     #[test]
     fn clickhouse_prepends_event_id_remap() {
-        // Minimal settings: no database (defaults to `default`), no table.
+        // The minimal settings: no database (the default is `default`), no
+        // table.
         let s = sink("clickhouse", "d3", json!({ "endpoint": "http://ch:8123" }));
         let p = s.pipeline(&RenderCtx::default()).unwrap();
 
-        // A remap maps the OCSF uid onto _event_id, reading the OCSF stream.
+        // A remap copies the OCSF uid to _event_id. It reads the OCSF stream.
         let remap = p.transforms.get("sink-clickhouse_d3-remap").expect("remap");
         assert_eq!(remap.source.as_deref(), Some("._event_id = .metadata.uid"));
         assert_eq!(remap.inputs, vec![OCSF_INPUT]);
 
-        // The sink reads the remap and targets the fixed default.striem_ocsf table.
+        // The sink reads the remap. It writes to the fixed default.striem_ocsf
+        // table.
         let ch = p.sinks.get("sink-clickhouse_d3").expect("clickhouse sink");
         let inputs = ch.get("inputs").unwrap().as_array().unwrap();
         assert_eq!(inputs[0].as_str(), Some("sink-clickhouse_d3-remap"));
@@ -374,11 +383,11 @@ mod tests {
 
     #[test]
     fn local_file_fans_out_one_parquet_sink_per_ocsf_class() {
-        // Pure JSON-driven fan-out; no filesystem access needed.
+        // The fan-out comes from JSON only. It does not read the filesystem.
         let s = sink("file", "d1", json!({ "path": "/data/storage" }));
         let p = s.pipeline(&RenderCtx::default()).unwrap();
 
-        // remap (from remap.vrl) feeds the exclusive_route.
+        // The remap (from remap.vrl) sends events to the exclusive_route.
         let remap = p.transforms.get("sink-file_d1-remap").expect("remap");
         assert_eq!(
             remap.file.as_deref(),
@@ -391,8 +400,8 @@ mod tests {
         let routes = route.routes.as_ref().expect("routes");
         assert!(!routes.is_empty());
 
-        // One parquet sink per class, keyed to its route port + own schema file
-        // under the interpolated schema dir.
+        // There is one parquet sink for each class. Each sink connects to its
+        // route port and uses its own schema file under the schema directory.
         let api = p
             .sinks
             .get("sink-file_d1-api_activity")
@@ -412,10 +421,10 @@ mod tests {
             "${STRIEM_SCHEMA_DIR}/application/api_activity.parquet.schema"
         );
 
-        // Exactly one sink per route.
+        // There is one sink for each route.
         assert_eq!(p.sinks.len(), routes.len());
 
-        // The whole document round-trips through TOML.
+        // The full document goes to TOML and back with no change.
         let mut cfg = VectorConfig::default();
         cfg.merge(p);
         let rendered = toml::to_string(&cfg).unwrap();
@@ -435,7 +444,8 @@ mod tests {
         ] {
             assert!(matches!(s.category(), SinkCategory::Notification));
             let pipeline = s.pipeline(&RenderCtx::default()).unwrap();
-            // Either the sink itself or a pre-transform reads the alerts stream.
+            // The sink or a transform that comes before it reads the alerts
+            // stream.
             let reads_alerts = pipeline
                 .transforms
                 .values()

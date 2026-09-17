@@ -1,10 +1,10 @@
 //! Detection-admin gRPC service.
 //!
-//! Implements the [`Detections`] protocol (defined in `striem_vector`) over the
-//! live in-memory [`SigmaCollection`]. This is the authoritative side of rule
-//! management: the API service is a thin gRPC proxy that forwards HTTP requests
-//! here. Mutations take effect immediately for the running detection engine and
-//! are persisted to the configured rules directory.
+//! This service implements the [`Detections`] protocol (from `striem_detection`)
+//! over the live in-memory [`SigmaCollection`]. This is the true source for rule
+//! management. The API service is a thin gRPC proxy. It sends the HTTP requests
+//! to here. A change takes effect at once for the running detection engine. The
+//! service also saves the change to the configured rules directory.
 
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ use striem_detection::{
     SetEnabledRequest, detections_server::Detections,
 };
 
-/// gRPC service backing detection rule administration.
+/// The gRPC service for detection rule administration.
 pub struct DetectionAdmin {
     detections: Arc<RwLock<SigmaCollection>>,
     config: Arc<ArcSwap<StrIEMConfig>>,
@@ -40,9 +40,9 @@ impl DetectionAdmin {
 
 #[tonic::async_trait]
 impl Detections for DetectionAdmin {
-    /// List all rules as summary JSON objects.
+    /// Lists all the rules as summary JSON objects.
     ///
-    /// A single malformed rule is skipped rather than failing the whole list.
+    /// The function skips a rule with bad format. It does not fail the full list.
     async fn list(&self, _: Request<ListRequest>) -> Result<Response<ListResponse>, Status> {
         let value = serde_json::to_value(&*self.detections.read().await)
             .map_err(|e| Status::internal(e.to_string()))?;
@@ -71,7 +71,7 @@ impl Detections for DetectionAdmin {
         Ok(Response::new(ListResponse { summaries }))
     }
 
-    /// Fetch a single rule's full JSON representation.
+    /// Gets the full JSON of one rule.
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<RuleResponse>, Status> {
         let id = request.into_inner().id;
         let detections = self.detections.read().await;
@@ -84,10 +84,11 @@ impl Detections for DetectionAdmin {
         Ok(Response::new(RuleResponse { rule }))
     }
 
-    /// Upload a new Sigma rule from raw YAML.
+    /// Adds a new Sigma rule from raw YAML.
     ///
-    /// Validates the YAML, rejects id conflicts, adds it to the live collection,
-    /// then persists it to the configured rules directory.
+    /// The function checks the YAML. It rejects an id that is already in use. It
+    /// adds the rule to the live collection. Then it saves the rule to the
+    /// configured rules directory.
     async fn create(
         &self,
         request: Request<CreateRequest>,
@@ -119,7 +120,7 @@ impl Detections for DetectionAdmin {
         Ok(Response::new(CreateResponse { id }))
     }
 
-    /// Enable or disable an existing rule.
+    /// Enables or disables a rule that exists.
     async fn set_enabled(
         &self,
         request: Request<SetEnabledRequest>,

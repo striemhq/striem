@@ -8,11 +8,12 @@ use tokio::sync::broadcast;
 
 #[main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    // Starts logs, traces (OTLP when configured), and the metrics registry.
+    striem_telemetry::init("api");
 
-    // The API service is stateless with respect to detection rules: it proxies
-    // rule management to the detection microservice over gRPC (address resolved
-    // from config via detection_endpoint()).
+    // The API service holds no detection rules. It sends the rule management to
+    // the detection microservice over gRPC. It gets the address from the
+    // configuration with detection_endpoint().
     let config = StrIEMConfig::new()?;
 
     let sys = broadcast::channel::<SysMessage>(1).0;

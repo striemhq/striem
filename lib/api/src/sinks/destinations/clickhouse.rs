@@ -1,4 +1,4 @@
-//! Clickhouse destination — streams the OCSF event stream into a Clickhouse table.
+//! Clickhouse destination. It sends the OCSF event stream to a Clickhouse table.
 
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use crate::sinks::{BasicAuth, Sink, SinkCategory, SinkType, OCSF_INPUT};
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ClickhouseSettings {
     pub endpoint: String,
-    /// Target database; defaults to `default` when unset.
+    /// The target database. The default is `default` if you do not set it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -22,20 +22,20 @@ pub struct Clickhouse {
     pub settings: ClickhouseSettings,
 }
 
-/// The table [`CREATE_TABLES_SQL`] creates and the sink writes to.
+/// The table that [`CREATE_TABLES_SQL`] makes and the sink writes to.
 const TABLE: &str = "striem_ocsf";
 
-/// DDL creating the [`TABLE`] destination table, run against ClickHouse when the
-/// sink is added.
+/// The DDL that makes the [`TABLE`] destination table. The service runs it
+/// against ClickHouse when you add the sink.
 const CREATE_TABLES_SQL: &str = include_str!("clickhouse.sql");
 
 impl Clickhouse {
-    /// Target database, defaulting to `default`.
+    /// The target database. The default is `default`.
     fn database(&self) -> &str {
         self.settings.database.as_deref().unwrap_or("default")
     }
 
-    /// Build the ClickHouse sink body reading from `inputs`.
+    /// Makes the ClickHouse sink body that reads from `inputs`.
     fn sink_type(&self, inputs: Vec<String>) -> SinkType {
         let auth = match (&self.settings.user, &self.settings.password) {
             (Some(user), Some(password)) if !user.is_empty() => Some(BasicAuth {
@@ -54,8 +54,8 @@ impl Clickhouse {
         }
     }
 
-    /// Connect to the ClickHouse HTTP endpoint and run [`CREATE_TABLES_SQL`] so
-    /// the destination table exists before Vector starts writing to it.
+    /// Connects to the ClickHouse HTTP endpoint and runs [`CREATE_TABLES_SQL`].
+    /// Thus the destination table exists before Vector writes to it.
     pub async fn create_tables(&self) -> anyhow::Result<()> {
         let mut request = reqwest::Client::new()
             .post(&self.settings.endpoint)
@@ -110,7 +110,7 @@ impl Sink for Clickhouse {
 
         let mut pipeline = Pipeline::default();
 
-        // Populate the table's `_event_id` column from the OCSF event uid.
+        // Fill the table's `_event_id` column from the OCSF event uid.
         pipeline.transforms.insert(
             remap_id.clone(),
             Transform::remap("._event_id = .metadata.uid").with_inputs([OCSF_INPUT]),

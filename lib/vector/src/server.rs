@@ -1,13 +1,13 @@
-//! Vector gRPC server implementation.
+//! Vector gRPC server.
 //!
-//! Implements Vector's protocol for receiving events via gRPC.
-//! Only supports log events; metric and trace events are rejected.
+//! This module obeys Vector's protocol to receive events with gRPC. It accepts
+//! only log events. It rejects metric events and trace events.
 //!
 //! # Protocol
-//! Vector sends PushEventsRequest with batches of events.
-//! The server forwards each batch to the single downstream consumer (the
-//! detection engine). Parquet storage is handled by Vector itself, so there is
-//! no in-process fan-out to justify broadcasting.
+//! Vector sends a PushEventsRequest with a batch of events. The server sends
+//! each batch to one downstream consumer, the detection engine. Vector writes
+//! the parquet storage. Thus the server does not send events to more than one
+//! consumer.
 
 use anyhow::{Result, anyhow};
 use log::debug;
@@ -22,24 +22,25 @@ use crate::{
     },
 };
 
-/// Vector protocol implementation. Receives event batches over gRPC and forwards
-/// them to the single downstream consumer (the detection engine).
+/// Vector protocol implementation. It receives batches of events with gRPC. It
+/// sends the batches to one downstream consumer, the detection engine.
 pub struct VectorService {
     channel: mpsc::Sender<Vec<Event>>,
 }
 
 #[tonic::async_trait]
 impl Vector for VectorService {
-    /// Receive log events and forward them to the detection engine.
+    /// Receives log events and sends them to the detection engine.
     ///
-    /// # Event Type Filtering
-    /// Only log events are supported. Metrics and traces are rejected
-    /// with UNIMPLEMENTED status to fail fast rather than silently drop.
+    /// # Event Types
+    /// The server accepts only log events. It rejects metric events and trace
+    /// events with the UNIMPLEMENTED status. Thus it fails immediately. It does
+    /// not drop these events without a message.
     ///
     /// # Backpressure
-    /// The batch is moved into the channel with no cloning. `send` awaits
-    /// capacity, so a slow detection engine backpressures ingestion rather than
-    /// dropping events.
+    /// The server moves the batch into the channel. It does not copy the batch.
+    /// The `send` operation waits for space in the channel. Thus a slow
+    /// detection engine slows the input. The server does not drop events.
     async fn push_events(
         &self,
         request: tonic::Request<vector::PushEventsRequest>,
@@ -83,9 +84,10 @@ impl Vector for VectorService {
     }
 }
 
-/// Vector gRPC server holding the ingestion channel to the detection engine.
-/// The channel is created at construction; the receiver is handed to the
-/// consumer via [`Server::subscribe`] and the service via [`Server::service`].
+/// Vector gRPC server. It holds the input channel to the detection engine.
+/// `Server::new` makes the channel. `Server::subscribe` gives the receiver to
+/// the consumer. `Server::service` gives the tonic service, which holds the
+/// sender.
 pub struct Server {
     service: Option<VectorService>,
     rx: Option<mpsc::Receiver<Vec<Event>>>,
@@ -98,12 +100,14 @@ impl Default for Server {
 }
 
 impl Server {
-    /// Create server with a 256-batch buffer.
+    /// Makes a server with a buffer for 256 batches.
     ///
-    /// # Buffer Sizing
-    /// 256 buffers slow-consumer bursts without excessive memory. Vector batches
-    /// events, so this represents ~10-50 Vector batches depending on its batch
-    /// settings; beyond it, `push_events` awaits capacity (backpressure).
+    /// # Buffer Size
+    /// The buffer of 256 holds bursts from a slow consumer. It does not use too
+    /// much memory. Vector sends events in batches. Thus this buffer holds
+    /// approximately 10 to 50 Vector batches. The count depends on Vector's
+    /// batch configuration. When the buffer is full, `push_events` waits for
+    /// space.
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel(256);
         Self {
@@ -112,13 +116,13 @@ impl Server {
         }
     }
 
-    /// Take the configured tonic service so the caller can mount it on a
-    /// [`tonic::transport::Server`] alongside other services (e.g. the
-    /// detection-admin service). Consumes the internal service; call
-    /// [`Server::subscribe`] first to obtain event receivers.
+    /// Gives the tonic service. The caller mounts it on a
+    /// [`tonic::transport::Server`] with other services. One example is the
+    /// detection-admin service. This function takes the internal service. Call
+    /// [`Server::subscribe`] before this function to get the event receiver.
     ///
-    /// Gzip decompression is accepted to match Vector's default client
-    /// compression settings.
+    /// The service accepts Gzip compression. This agrees with Vector's default
+    /// client compression.
     pub fn service(&mut self) -> Result<VectorServer<VectorService>> {
         let service = self
             .service
@@ -128,7 +132,8 @@ impl Server {
         Ok(VectorServer::new(service).accept_compressed(tonic::codec::CompressionEncoding::Gzip))
     }
 
-    /// Take the ingestion receiver. Single-consumer: can only be called once.
+    /// Takes the input receiver. There is only one consumer, so you can call
+    /// this function only one time.
     pub fn subscribe(&mut self) -> Result<mpsc::Receiver<Vec<Event>>> {
         self.rx
             .take()

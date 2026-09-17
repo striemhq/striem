@@ -1,0 +1,372 @@
+/* ===========================================================================
+   StrIEM themes: light (default), dark, and glitter (Barbie-inspired pink).
+   ---------------------------------------------------------------------------
+   Light is the untouched Tailwind default. Dark and glitter remap the small set
+   of utility classes the app uses (bg-white, text-gray-*, border-gray-*, …) and
+   the `@apply`-based component classes (.card, .sidebar, .btn-primary, …) to a
+   palette of CSS variables. The theme script in layout.tsx sets `data-theme`.
+   =========================================================================== */
+
+/* ---- Palettes ---------------------------------------------------------- */
+
+:root[data-theme="light"] {
+  --app-bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f9fafb;
+  --surface-3: #f3f4f6;
+  --surface-4: #e5e7eb;
+  --fg: #111827;
+  --fg-2: #374151;
+  --muted: #6b7280;
+  --muted-2: #9ca3af;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-weak: #dbeafe;
+  --primary-on: #1e40af;
+  --sidebar-bg: #1e293b;
+  --sidebar-fg: #ffffff;
+  --sidebar-muted: #94a3b8;
+  --danger-weak: #fef2f2;
+  --success-weak: #f0fdf4;
+  --warning-weak: #fef9c3;
+}
+
+:root[data-theme="dark"] {
+  --app-bg: #0b1220;
+  --surface: #111827;
+  --surface-2: #0f172a;
+  --surface-3: #1e293b;
+  --surface-4: #334155;
+  --fg: #f1f5f9;
+  --fg-2: #cbd5e1;
+  --muted: #94a3b8;
+  --muted-2: #64748b;
+  --border: #334155;
+  --border-strong: #475569;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-weak: #1e3a5f;
+  --primary-on: #bfdbfe;
+  --sidebar-bg: #060b16;
+  --sidebar-fg: #e2e8f0;
+  --sidebar-muted: #64748b;
+  --danger-weak: #3f1d1d;
+  --success-weak: #12341f;
+  --warning-weak: #3a2f0b;
+}
+
+:root[data-theme="glitter"] {
+  --app-bg: #ffe6f4;
+  --surface: #fff5fb;
+  --surface-2: #ffe9f5;
+  --surface-3: #ffdcef;
+  --surface-4: #ffc2e2;
+  --fg: #7a1550;
+  --fg-2: #a5306f;
+  --muted: #c8619a;
+  --muted-2: #d98cb4;
+  --border: #ffb3d9;
+  --border-strong: #ff8ec6;
+  --primary: #ff1493; /* Barbie deep pink */
+  --primary-hover: #e60d80;
+  --primary-weak: #ffd6ec;
+  --primary-on: #7a1550;
+  --sidebar-bg: linear-gradient(180deg, #ff69b4 0%, #ff1493 60%, #d6006e 100%);
+  --sidebar-fg: #ffffff;
+  --sidebar-muted: #ffd6ec;
+  --danger-weak: #ffe0e0;
+  --success-weak: #e6ffe9;
+  --warning-weak: #fff3cc;
+}
+
+body {
+  background: var(--app-bg, #f3f4f6);
+}
+/* The main content region uses bg-gray-100 in page.tsx; keep it on-palette. */
+[data-theme] .bg-gray-100 {
+  background-color: var(--surface-3);
+}
+
+/* ---- Raw utility remaps (used directly in JSX) ------------------------- */
+
+[data-theme="dark"] .bg-white,
+[data-theme="glitter"] .bg-white {
+  background-color: var(--surface);
+}
+[data-theme="dark"] .bg-gray-50,
+[data-theme="glitter"] .bg-gray-50 {
+  background-color: var(--surface-2);
+}
+[data-theme="dark"] .bg-gray-200,
+[data-theme="glitter"] .bg-gray-200 {
+  background-color: var(--surface-4);
+}
+[data-theme="dark"] .hover\:bg-gray-50:hover,
+[data-theme="glitter"] .hover\:bg-gray-50:hover {
+  background-color: var(--surface-2);
+}
+[data-theme="dark"] .hover\:bg-gray-100:hover,
+[data-theme="glitter"] .hover\:bg-gray-100:hover {
+  background-color: var(--surface-3);
+}
+
+[data-theme="dark"] .text-gray-900,
+[data-theme="dark"] .text-gray-800,
+[data-theme="glitter"] .text-gray-900,
+[data-theme="glitter"] .text-gray-800 {
+  color: var(--fg);
+}
+[data-theme="dark"] .text-gray-700,
+[data-theme="dark"] .text-gray-600,
+[data-theme="glitter"] .text-gray-700,
+[data-theme="glitter"] .text-gray-600 {
+  color: var(--fg-2);
+}
+[data-theme="dark"] .text-gray-500,
+[data-theme="glitter"] .text-gray-500 {
+  color: var(--muted);
+}
+[data-theme="dark"] .text-gray-400,
+[data-theme="glitter"] .text-gray-400 {
+  color: var(--muted-2);
+}
+
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border,
+[data-theme="glitter"] .border-gray-200,
+[data-theme="glitter"] .border {
+  border-color: var(--border);
+}
+[data-theme="dark"] .border-gray-300,
+[data-theme="glitter"] .border-gray-300 {
+  border-color: var(--border-strong);
+}
+[data-theme="dark"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme="glitter"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .bg-blue-600,
+[data-theme="glitter"] .bg-blue-600 {
+  background-color: var(--primary);
+}
+[data-theme="dark"] .text-blue-600,
+[data-theme="glitter"] .text-blue-600 {
+  color: var(--primary);
+}
+
+/* Dark-only: the pale status tints are unreadable on a dark surface. */
+[data-theme="dark"] .bg-red-50 {
+  background-color: var(--danger-weak);
+}
+[data-theme="dark"] .bg-green-50 {
+  background-color: var(--success-weak);
+}
+[data-theme="dark"] .bg-yellow-100,
+[data-theme="dark"] .bg-yellow-50 {
+  background-color: var(--warning-weak);
+}
+[data-theme="dark"] .bg-blue-100,
+[data-theme="dark"] .bg-blue-50 {
+  background-color: var(--primary-weak);
+}
+[data-theme="dark"] .text-blue-800 {
+  color: var(--primary-on);
+}
+
+/* ---- Component classes (from components.css @apply) -------------------- */
+
+[data-theme] .sidebar {
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+}
+[data-theme] .sidebar-section-label {
+  color: var(--sidebar-muted);
+}
+[data-theme="dark"] .nav-button-inactive,
+[data-theme="glitter"] .nav-button-inactive {
+  color: var(--sidebar-fg);
+}
+[data-theme] .nav-button-active {
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .card-bordered,
+[data-theme="dark"] .card-hover,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .modal-base,
+[data-theme="dark"] .dropdown-menu,
+[data-theme="glitter"] .card,
+[data-theme="glitter"] .card-bordered,
+[data-theme="glitter"] .card-hover,
+[data-theme="glitter"] .panel,
+[data-theme="glitter"] .modal-base,
+[data-theme="glitter"] .dropdown-menu {
+  background-color: var(--surface);
+  border-color: var(--border);
+  color: var(--fg);
+}
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer,
+[data-theme="dark"] .panel-section,
+[data-theme="glitter"] .modal-header,
+[data-theme="glitter"] .modal-footer,
+[data-theme="glitter"] .panel-section {
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .input-base,
+[data-theme="dark"] .input-sm,
+[data-theme="dark"] .select-base,
+[data-theme="dark"] .textarea-base,
+[data-theme="dark"] .datetime-input,
+[data-theme="dark"] .search-input,
+[data-theme="glitter"] .input-base,
+[data-theme="glitter"] .input-sm,
+[data-theme="glitter"] .select-base,
+[data-theme="glitter"] .textarea-base,
+[data-theme="glitter"] .datetime-input,
+[data-theme="glitter"] .search-input {
+  background-color: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+[data-theme] .btn-primary {
+  background-color: var(--primary);
+  color: #ffffff;
+}
+[data-theme] .btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+[data-theme="dark"] .btn-secondary,
+[data-theme="glitter"] .btn-secondary {
+  background-color: var(--surface-3);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+[data-theme="dark"] .heading-page,
+[data-theme="dark"] .heading-section,
+[data-theme="dark"] .heading-subsection,
+[data-theme="dark"] .heading-card,
+[data-theme="glitter"] .heading-page,
+[data-theme="glitter"] .heading-section,
+[data-theme="glitter"] .heading-subsection,
+[data-theme="glitter"] .heading-card {
+  color: var(--fg);
+}
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] .text-muted-xs,
+[data-theme="dark"] .text-description,
+[data-theme="dark"] .text-helper,
+[data-theme="glitter"] .text-muted,
+[data-theme="glitter"] .text-muted-xs,
+[data-theme="glitter"] .text-description,
+[data-theme="glitter"] .text-helper {
+  color: var(--muted);
+}
+
+[data-theme="dark"] .table-base,
+[data-theme="glitter"] .table-base {
+  background-color: var(--surface);
+  color: var(--fg);
+}
+[data-theme="dark"] .table-head,
+[data-theme="glitter"] .table-head {
+  background-color: var(--surface-2);
+}
+[data-theme="dark"] .table-row-hover:hover,
+[data-theme="glitter"] .table-row-hover:hover {
+  background-color: var(--surface-2);
+}
+
+/* ===========================================================================
+   Glitter flair — a bit of Barbie sparkle on top of the pink palette.
+   =========================================================================== */
+
+[data-theme="glitter"] body {
+  font-family: "Comic Sans MS", "Chalkboard SE", "Comic Neue", "Segoe UI", cursive, sans-serif;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 1.5px),
+    radial-gradient(circle at 70% 60%, rgba(255, 255, 255, 0.8) 0, rgba(255, 255, 255, 0) 1.5px),
+    radial-gradient(circle at 40% 80%, rgba(255, 214, 236, 0.9) 0, rgba(255, 214, 236, 0) 2px),
+    radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.9) 0, rgba(255, 255, 255, 0) 1.5px),
+    linear-gradient(135deg, #ffe6f4 0%, #ffd1ec 100%);
+  background-size: 90px 90px, 120px 120px, 140px 140px, 110px 110px, 100% 100%;
+  animation: glitter-drift 30s linear infinite;
+}
+
+@keyframes glitter-drift {
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0; }
+  to { background-position: 90px 180px, -120px 120px, 140px -140px, -110px 110px, 0 0; }
+}
+
+[data-theme="glitter"] .sidebar {
+  box-shadow: 4px 0 24px rgba(255, 20, 147, 0.35);
+}
+[data-theme="glitter"] .sidebar-header h1 {
+  text-shadow: 0 1px 8px rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+}
+
+[data-theme="glitter"] .card,
+[data-theme="glitter"] .card-bordered,
+[data-theme="glitter"] .panel,
+[data-theme="glitter"] .modal-base {
+  box-shadow: 0 4px 20px rgba(255, 20, 147, 0.15);
+  border-radius: 1rem;
+}
+
+[data-theme="glitter"] .btn-primary {
+  background-image: linear-gradient(135deg, #ff69b4, #ff1493);
+  box-shadow: 0 2px 12px rgba(255, 20, 147, 0.4);
+  border-radius: 9999px;
+}
+[data-theme="glitter"] .btn-primary::after {
+  content: " ✨";
+}
+[data-theme="glitter"] .nav-button-active {
+  background-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="glitter"] body {
+    animation: none;
+  }
+}
+
+/* ---- Theme switch (sits in the sidebar) ------------------------------- */
+.theme-toggle {
+  display: flex;
+  gap: 6px;
+  padding: 12px;
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.theme-toggle-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.theme-toggle-active {
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+[data-theme="glitter"] .theme-toggle-active {
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+}

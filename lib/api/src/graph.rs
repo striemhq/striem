@@ -1,11 +1,11 @@
 //! Typed model of a Vector component graph.
 //!
-//! StrIEM builds a Vector configuration by merging small [`Pipeline`]
-//! fragments — one per source and sink — onto a boilerplate [`VectorConfig`].
-//! Every component is keyed by its Vector component id, so merging is just a
-//! map union: shared components (e.g. the single HTTP listener that fronts
-//! many HTTP sources) de-duplicate naturally instead of needing special-cased
-//! merge logic.
+//! StrIEM makes a Vector configuration. It merges small [`Pipeline`] fragments
+//! onto a boilerplate [`VectorConfig`]. There is one fragment for each source
+//! and each sink. The Vector component id is the key for each component. Thus a
+//! merge is only a union of maps. Some components are shared — one example is
+//! the single HTTP listener for many HTTP sources. These shared components
+//! become one component. The merge does not need special logic to do this.
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -13,39 +13,40 @@ use std::fmt::Display;
 use anyhow::Result;
 use serde::Serialize;
 
-/// A Vector component body (a source or a sink) — an inline table of
-/// arbitrary, component-specific keys such as `type`, `address`, `inputs`.
+/// A Vector component body (a source or a sink). It is an inline table. The
+/// table has keys for the component, for example `type`, `address`, `inputs`.
 pub type Component = toml::Value;
 
-/// Serialize any component config into a [`Component`] table.
+/// Makes a [`Component`] table from a component configuration.
 pub fn component(body: impl Serialize) -> Result<Component> {
     Ok(toml::Value::try_from(body)?)
 }
 
-/// Deployment-wide context needed to render pipelines but not owned by an
-/// individual source or sink.
+/// The context for the full deployment. A pipeline needs this context to render.
+/// One source or one sink does not own it.
 #[derive(Clone, Default)]
 pub struct RenderCtx {
-    /// Directory holding the per-source OCSF remap VRL files.
+    /// The directory with the OCSF remap VRL files. There is one file for each
+    /// source.
     pub remaps_dir: String,
-    /// Bind address for the shared HTTP ingest listener, if configured.
+    /// The bind address for the shared HTTP input listener, if you configure it.
     pub http_address: Option<String>,
 }
 
 impl RenderCtx {
-    /// Path to the OCSF remap VRL file for a given source type.
+    /// Gives the path to the OCSF remap VRL file for a source type.
     pub fn remap_file(&self, sourcetype: impl Display) -> String {
         format!("{}/{}/remap.vrl", self.remaps_dir, sourcetype)
     }
 }
 
-/// A named route of an `exclusive_route` transform. Events are matched against
-/// routes in order (first match wins); each route is exposed as the output port
-/// `<transform>.<name>`.
+/// One named route of an `exclusive_route` transform. The transform compares
+/// each event with the routes in sequence. The first route that agrees wins.
+/// Each route is the output port `<transform>.<name>`.
 #[derive(Serialize, Clone)]
 pub struct Route {
     pub name: String,
-    /// VRL boolean expression selecting events for this route.
+    /// The VRL boolean expression that selects events for this route.
     pub condition: String,
 }
 
@@ -55,16 +56,16 @@ pub struct Transform {
     #[serde(flatten)]
     pub transform_type: TransformType,
     pub inputs: Vec<String>,
-    /// Inline VRL program (for `remap`).
+    /// The inline VRL program (for `remap`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// Path to a VRL program file (for `remap`).
+    /// The path to a VRL program file (for `remap`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
-    /// VRL condition (for `filter`).
+    /// The VRL condition (for `filter`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<String>,
-    /// Named routes (for `exclusive_route`).
+    /// The named routes (for `exclusive_route`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub routes: Option<Vec<Route>>,
 }
@@ -79,7 +80,7 @@ pub enum TransformType {
 }
 
 impl Transform {
-    /// A `remap` transform running an inline VRL program.
+    /// A `remap` transform that runs an inline VRL program.
     pub fn remap(source: impl Into<String>) -> Self {
         Transform {
             transform_type: TransformType::Remap,
@@ -88,7 +89,7 @@ impl Transform {
         }
     }
 
-    /// A `remap` transform running a VRL program from a file.
+    /// A `remap` transform that runs a VRL program from a file.
     pub fn remap_file(file: impl Into<String>) -> Self {
         Transform {
             transform_type: TransformType::Remap,
@@ -97,7 +98,8 @@ impl Transform {
         }
     }
 
-    /// A `filter` transform keeping only events matching `condition`.
+    /// A `filter` transform that keeps only the events that agree with
+    /// `condition`.
     pub fn filter(condition: impl Into<String>) -> Self {
         Transform {
             transform_type: TransformType::Filter,
@@ -106,8 +108,8 @@ impl Transform {
         }
     }
 
-    /// An `exclusive_route` transform splitting the stream into one output port
-    /// per route (first match wins).
+    /// An `exclusive_route` transform. It splits the stream into one output port
+    /// for each route. The first route that agrees wins.
     pub fn exclusive_route(routes: Vec<Route>) -> Self {
         Transform {
             transform_type: TransformType::ExclusiveRoute,
@@ -116,7 +118,7 @@ impl Transform {
         }
     }
 
-    /// Set this transform's inputs (the ids of upstream components).
+    /// Sets the inputs of this transform (the ids of the upstream components).
     pub fn with_inputs<I, S>(mut self, inputs: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -127,8 +129,7 @@ impl Transform {
     }
 }
 
-/// A fragment of the Vector component graph contributed by a single source or
-/// sink.
+/// A part of the Vector component graph. One source or one sink gives this part.
 #[derive(Default)]
 pub struct Pipeline {
     pub sources: BTreeMap<String, Component>,
@@ -136,7 +137,7 @@ pub struct Pipeline {
     pub sinks: BTreeMap<String, Component>,
 }
 
-/// Top-level Vector schema options.
+/// The top-level Vector schema options.
 #[derive(Serialize)]
 pub struct Schema {
     pub log_namespace: bool,
@@ -144,15 +145,15 @@ pub struct Schema {
 
 impl Default for Schema {
     fn default() -> Self {
-        // StrIEM relies on the log namespace to carry source metadata.
+        // StrIEM needs the log namespace to carry the source metadata.
         Schema {
             log_namespace: true,
         }
     }
 }
 
-/// A complete Vector configuration document, assembled from boilerplate plus
-/// the merged pipelines of every configured source and sink.
+/// A complete Vector configuration document. It has the boilerplate and the
+/// merged pipelines of every source and sink.
 #[derive(Serialize, Default)]
 pub struct VectorConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,8 +168,9 @@ pub struct VectorConfig {
 }
 
 impl VectorConfig {
-    /// Merge a source/sink [`Pipeline`] into this document. Components with a
-    /// colliding id (e.g. a shared HTTP listener) are de-duplicated.
+    /// Merges a source or sink [`Pipeline`] into this document. Two components
+    /// with the same id become one component. One example is a shared HTTP
+    /// listener.
     pub fn merge(&mut self, pipeline: Pipeline) {
         self.sources.extend(pipeline.sources);
         self.transforms.extend(pipeline.transforms);
@@ -176,8 +178,8 @@ impl VectorConfig {
     }
 }
 
-/// Vector component id conventions. These functions are the single source of
-/// truth for how StrIEM names the nodes of a source's normalization chain.
+/// The rules for Vector component ids. These functions are the single source of
+/// truth. They set the names of the nodes in a source's normalization chain.
 pub mod naming {
     use std::fmt::Display;
 
@@ -191,12 +193,12 @@ pub mod naming {
         format!("pre-{}_{}", sourcetype, id)
     }
 
-    /// The logsource-tagging transform: `logsource-<type>_<id>`.
+    /// The logsource-tag transform: `logsource-<type>_<id>`.
     pub fn logsource(sourcetype: impl Display, id: &str) -> String {
         format!("logsource-{}_{}", sourcetype, id)
     }
 
-    /// The terminal, OCSF-normalized node: `ocsf-<type>_<id>`.
+    /// The last node, normalized to OCSF: `ocsf-<type>_<id>`.
     pub fn ocsf(sourcetype: impl Display, id: &str) -> String {
         format!("ocsf-{}_{}", sourcetype, id)
     }
