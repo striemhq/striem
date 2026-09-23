@@ -7,7 +7,7 @@ syntax = "proto3";
 // service is a thin proxy. It sends these payloads to and from its HTTP clients.
 package striem.detection.v1;
 
-service Detections {
+service SigmaCollection {
   // Lists all the loaded rules as summary JSON objects.
   rpc List(ListRequest) returns (ListResponse);
   // Gets the full JSON of one rule by its id.

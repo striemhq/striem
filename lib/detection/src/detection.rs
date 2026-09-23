@@ -23,7 +23,7 @@ use serde_json::Value;
 use striem_common::{SysMessage, event::Event};
 use uuid::Uuid;
 
-use crate::logsource_event::{LogsourceEvent, logsource_from_metadata};
+use crate::event::{LogsourceEvent, logsource_from_metadata};
 use crate::ocsf::result_to_ocsf;
 use tokio::sync::{broadcast, mpsc};
 

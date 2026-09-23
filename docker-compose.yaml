@@ -9,7 +9,7 @@
 #   vector --(OCSF, grpc)--> detection --(findings, grpc)--> vector --> storage
 #   vector <--(config, http)-- api
 #
-# The detection service runs `rsigma-detection`. Its rules live on disk
+# The detection service runs `detection`. Its rules live on disk
 # (RSIGMA_DETECTION_RULES), and it hosts the detection-admin gRPC API over those
 # files, so the api/UI rule proxy (STRIEM_DETECTION_URL) works against it.
 #
@@ -57,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["sh", "-c", "mkdir -p /data/detections && exec rsigma-detection"]
+    command: ["sh", "-c", "mkdir -p /data/detections && exec detection"]
     depends_on:
       setup:
         condition: service_completed_successfully

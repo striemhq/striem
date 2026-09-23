@@ -29,10 +29,10 @@ use sinks::Sink;
 use sources::Source;
 use store::Store;
 
-use striem_detection::detections_client::DetectionsClient;
+use striem_detection::sigma_collection_client::SigmaCollectionClient;
 
 /// The gRPC client to the detection microservice's admin API.
-pub(crate) type DetectionClient = DetectionsClient<tonic::transport::Channel>;
+pub(crate) type DetectionClient = SigmaCollectionClient<tonic::transport::Channel>;
 
 #[cfg(feature = "duckdb")]
 pub(crate) type Pool = r2d2::Pool<duckdb::DuckdbConnectionManager>;

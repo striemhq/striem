@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rsigma_detection::DetectionHandler;
-use rsigma_detection::config::{Config, LogsourceConfig};
+use striem_detection::DetectionHandler;
+use striem_detection::config::{Config, LogsourceConfig};
 use rsigma_eval::CorrelationConfig;
 use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
 use striem_common::{SysMessage, event::Event};

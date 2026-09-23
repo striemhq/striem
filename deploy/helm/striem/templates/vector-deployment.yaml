@@ -65,8 +65,12 @@ spec:
             - name: VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION
               value: "true"
           volumeMounts:
+            # Mount only the provider file, so the rest of the image's
+            # /etc/vector stays visible. The checksum/config annotation rolls
+            # the pod on change, because subPath mounts do not live-update.
             - name: config
-              mountPath: /etc/vector
+              mountPath: /etc/vector/vector.yaml
+              subPath: vector.yaml
               readOnly: true
             - name: schemas
               mountPath: /schemas

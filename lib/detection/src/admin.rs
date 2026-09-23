@@ -1,6 +1,6 @@
-//! Detection-admin gRPC service for rsigma-detection.
+//! Detection-admin gRPC service for the detection service.
 //!
-//! This service implements the shared [`Detections`] protocol (from
+//! This service implements the shared [`StrIem`] protocol (from
 //! `striem_detection`). Thus the StrIEM API and UI rule-management proxy works
 //! against this engine too. This is the same contract that the `sigmars`
 //! service gives.
@@ -22,19 +22,19 @@ use serde_json::json;
 use tokio::task::spawn_blocking;
 use tonic::{Request, Response, Status};
 
-use striem_detection::{
+use crate::proto::{
     CreateRequest, CreateResponse, GetRequest, ListRequest, ListResponse, RuleResponse,
-    SetEnabledRequest, detections_server::Detections,
+    SetEnabledRequest, sigma_collection_server::SigmaCollection
 };
 
 const DISABLED_SUFFIX: &str = ".disabled";
 
 /// The gRPC service for rule administration over the engine's rules directory.
-pub struct DetectionAdmin {
+pub struct CollectionAdmin {
     processor: Arc<LogProcessor>,
 }
 
-impl DetectionAdmin {
+impl CollectionAdmin {
     pub fn new(processor: Arc<LogProcessor>) -> Self {
         Self { processor }
     }
@@ -87,14 +87,14 @@ fn scan_rules(dir: &Path) -> Vec<RuleEntry> {
     out
 }
 
-impl DetectionAdmin {
+impl CollectionAdmin {
     fn rules_dir(&self) -> PathBuf {
         self.processor.rules_path()
     }
 }
 
 #[tonic::async_trait]
-impl Detections for DetectionAdmin {
+impl SigmaCollection for CollectionAdmin {
     async fn list(&self, _: Request<ListRequest>) -> Result<Response<ListResponse>, Status> {
         let dir = self.rules_dir();
         let summaries = spawn_blocking(move || {

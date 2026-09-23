@@ -1,14 +1,14 @@
-//! `rsigma-detection` — StrIEM's detection service that Vector feeds. rsigma is
-//! the engine.
+//! `detection` — StrIEM's detection service that Vector feeds. rsigma is the
+//! engine.
 //!
 //! Usage:
-//!   rsigma-detection --rules <DIR> [--input <ADDR>] [--output <URL>]
-//!                    [--batch-size <N>]
-//!                    [--logsource-field-map <KV>] [--event-logsource <KV>]
-//!                    [--no-logsource-pruning]
+//!   detection --rules <DIR> [--input <ADDR>] [--output <URL>]
+//!             [--batch-size <N>]
+//!             [--logsource-field-map <KV>] [--event-logsource <KV>]
+//!             [--no-logsource-pruning]
 //!
 //! Example:
-//!   rsigma-detection --rules ./rules \
+//!   detection --rules ./rules \
 //!       --input 0.0.0.0:6000 \
 //!       --output http://vector:6001 \
 //!       --event-logsource product=windows
@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use log::{error, info};
-use rsigma_detection::config::LogsourceConfig;
-use rsigma_detection::{Config, DetectionService};
+use striem_detection::config::LogsourceConfig;
+use striem_detection::{Config, DetectionService};
 use striem_common::SysMessage;
 use tokio::sync::broadcast;
 
@@ -111,7 +111,7 @@ async fn wait_for_signal() {
 }
 
 const USAGE: &str = "\
-Usage: rsigma-detection --rules <DIR> [options]
+Usage: detection --rules <DIR> [options]
 
 Options:
   --rules <PATH>                 Sigma rules directory or file (required)

@@ -23,7 +23,7 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
-use striem_detection::detections_client::DetectionsClient;
+use striem_detection::sigma_collection_client::SigmaCollectionClient;
 
 use striem_config::StrIEMConfig;
 use striem_config::StringOrList;
@@ -58,7 +58,7 @@ pub async fn serve(
     // over gRPC. The connection is lazy, so the API can start before the
     // detection service is available. The first request makes the connection.
     let endpoint = config.detection_endpoint();
-    let detections = DetectionsClient::new(
+    let detections = SigmaCollectionClient::new(
         tonic::transport::Endpoint::from_shared(endpoint.clone())
             .map_err(|e| anyhow::anyhow!("invalid detection endpoint {}: {}", endpoint, e))?
             .connect_lazy(),

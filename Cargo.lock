@@ -262,7 +262,7 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "atoi",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "comfy-table",
  "half",
@@ -570,6 +570,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "better_any"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -832,6 +838,33 @@ checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
 dependencies = [
  "chrono",
  "phf",
+]
+
+[[package]]
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+dependencies = [
+ "ciborium-io",
+ "half",
 ]
 
 [[package]]
@@ -1752,6 +1785,9 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "hashlink"
@@ -1764,11 +1800,11 @@ dependencies = [
 
 [[package]]
 name = "hashlink"
-version = "0.11.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "824e001ac4f3012dd16a264bec811403a67ca9deb6c102fc5049b32c4574b35f"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -1955,7 +1991,7 @@ version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "727805d60e7938b76b826a6ef209eb70eaa1812794f9424d4a4e2d740662df5f"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-core",
@@ -2232,7 +2268,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bdc5a74b0feeb5e6a1dc2dd08c34280a61e37668d10a6a3b27ad69d0fb9ce2e"
 dependencies = [
  "aho-corasick",
- "base64",
+ "base64 0.22.1",
  "bstr",
  "jaq-core",
  "jiff",
@@ -2452,9 +2488,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.37.0"
+version = "0.38.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
+checksum = "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8"
 dependencies = [
  "cc",
  "pkg-config",
@@ -2802,7 +2838,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c1be0c6c22ec0817cdc77d3842f721a17fd30ab6965001415b5402a74e6b740"
 dependencies = [
  "async-trait",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "chrono",
  "form_urlencoded",
@@ -3423,7 +3459,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1eb4db68956f857c52eeda072d87644a7b42eac41d55073af94dfac8441af6cf"
 dependencies = [
  "argminmax",
- "base64",
+ "base64 0.22.1",
  "bytemuck",
  "chrono",
  "chrono-tz",
@@ -3456,7 +3492,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c849c10edd9511ccd4ec4130e283ee3a8b3bb48a7d74ac6354c1c20add81065"
 dependencies = [
  "async-stream",
- "base64",
+ "base64 0.22.1",
  "bytemuck",
  "ethnum",
  "futures",
@@ -3997,9 +4033,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
+checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
 dependencies = [
  "either",
  "rayon-core",
@@ -4114,7 +4150,7 @@ version = "0.12.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "encoding_rs",
  "futures-channel",
@@ -4206,7 +4242,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5947688160b56fb6c827e3c20a72c90392a1d7e9dec74749197aa1780ac42ca"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "chrono",
  "futures",
  "http",
@@ -4275,42 +4311,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsigma-detection"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "backoff",
- "chrono",
- "env_logger",
- "log",
- "rsigma-eval",
- "rsigma-parser",
- "rsigma-runtime",
- "serde_json",
- "striem_common",
- "striem_detection",
- "striem_telemetry",
- "striem_vector",
- "tempfile",
- "tokio",
- "tonic 0.13.1",
- "uuid",
-]
-
-[[package]]
 name = "rsigma-eval"
-version = "0.19.0"
-source = "git+https://github.com/timescale/rsigma.git?tag=v0.19.0#f90c4f4a1c55bf57fd80132fea36aae2fc52adab"
+version = "0.22.0"
+source = "git+http://github.com/sonnens/rsigma?branch=logsource_extractor_trait#764c5602b381d4121d1cbcd76785aa9684c757ac"
 dependencies = [
  "ahash 0.8.12",
  "aho-corasick",
- "base64",
+ "base64 0.23.1",
  "chrono",
  "flate2",
  "ipnet",
  "log",
  "rayon",
  "regex",
+ "regex-syntax",
+ "rsigma-ir",
+ "rsigma-parser",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "yaml_serde",
+]
+
+[[package]]
+name = "rsigma-ir"
+version = "0.22.0"
+source = "git+http://github.com/sonnens/rsigma?branch=logsource_extractor_trait#764c5602b381d4121d1cbcd76785aa9684c757ac"
+dependencies = [
+ "ciborium",
  "rsigma-parser",
  "serde",
  "serde_json",
@@ -4320,8 +4348,8 @@ dependencies = [
 
 [[package]]
 name = "rsigma-parser"
-version = "0.19.0"
-source = "git+https://github.com/timescale/rsigma.git?tag=v0.19.0#f90c4f4a1c55bf57fd80132fea36aae2fc52adab"
+version = "0.22.0"
+source = "git+http://github.com/sonnens/rsigma?branch=logsource_extractor_trait#764c5602b381d4121d1cbcd76785aa9684c757ac"
 dependencies = [
  "globset",
  "log",
@@ -4337,12 +4365,12 @@ dependencies = [
 
 [[package]]
 name = "rsigma-runtime"
-version = "0.19.0"
-source = "git+https://github.com/timescale/rsigma.git?tag=v0.19.0#f90c4f4a1c55bf57fd80132fea36aae2fc52adab"
+version = "0.22.0"
+source = "git+http://github.com/sonnens/rsigma?branch=logsource_extractor_trait#764c5602b381d4121d1cbcd76785aa9684c757ac"
 dependencies = [
  "arc-swap",
  "async-trait",
- "base64",
+ "base64 0.23.1",
  "cel",
  "chrono",
  "csv",
@@ -4356,6 +4384,7 @@ dependencies = [
  "jsonpath-rust",
  "notify",
  "parking_lot",
+ "rayon",
  "regex",
  "reqwest",
  "rsigma-eval",
@@ -4385,14 +4414,14 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.39.0"
+version = "0.40.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d2b0146dd9661bf67bb107c0bb2a55064d556eeb3fc314151b957f313bcd4e"
+checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
 dependencies = [
  "bitflags",
  "fallible-iterator",
  "fallible-streaming-iterator",
- "hashlink 0.11.1",
+ "hashlink 0.12.2",
  "libsqlite3-sys",
  "smallvec",
  "sqlite-wasm-rs",
@@ -4980,28 +5009,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 
 [[package]]
-name = "striem"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "backoff",
- "chrono",
- "env_logger",
- "log",
- "serde_json",
- "serde_yaml",
- "sigmars",
- "striem_api",
- "striem_common",
- "striem_config",
- "striem_detection",
- "striem_vector",
- "tokio",
- "tonic 0.13.1",
-]
-
-[[package]]
 name = "striem_api"
 version = "0.1.0"
 dependencies = [
@@ -5057,9 +5064,25 @@ dependencies = [
 name = "striem_detection"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "backoff",
+ "chrono",
+ "env_logger",
+ "log",
  "prost",
+ "prost-types",
+ "rsigma-eval",
+ "rsigma-parser",
+ "rsigma-runtime",
+ "serde_json",
+ "striem_common",
+ "striem_telemetry",
+ "striem_vector",
+ "tempfile",
+ "tokio",
  "tonic 0.13.1",
  "tonic-build",
+ "uuid",
 ]
 
 [[package]]
@@ -5509,7 +5532,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum 0.7.9",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "h2",
  "http",
@@ -5538,7 +5561,7 @@ checksum = "7e581ba15a835f4d9ea06c55ab1bd4dce26fc53752c69a04aac00703bfb49ba9"
 dependencies = [
  "async-trait",
  "axum 0.8.7",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "flate2",
  "h2",

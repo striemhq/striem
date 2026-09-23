@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use rsigma_eval::LogSourceExtractor;
 use rsigma_parser::LogSource;
 
-use crate::logsource_event::LS_PREFIX;
+use crate::{event::LogsourceEvent, logsource::VectorLogSourceExtractor};
 
 /// The full service configuration.
 #[derive(Debug, Clone)]
@@ -68,7 +68,7 @@ impl Default for LogsourceConfig {
 impl Config {
     /// Makes the [`LogSourceExtractor`] for the conflict-pruning path. Gives
     /// `Ok(None)` when pruning is off.
-    pub fn build_logsource_extractor(&self) -> Result<Option<LogSourceExtractor>, String> {
+    pub fn build_logsource_extractor(&self) -> Result<Option<Box<dyn LogSourceExtractor<LogsourceEvent<'_>>>>, String> {
         if !self.logsource.enabled {
             return Ok(None);
         }
@@ -96,19 +96,7 @@ impl Config {
             ),
         };
 
-        let mut extractor = LogSourceExtractor::new().with_field_names(
-            format!("{LS_PREFIX}{product_key}"),
-            format!("{LS_PREFIX}{service_key}"),
-            format!("{LS_PREFIX}{category_key}"),
-        );
-        if !custom.is_empty() {
-            extractor = extractor.with_custom_fields(
-                custom
-                    .into_iter()
-                    .map(|(dim, key)| (dim, format!("{LS_PREFIX}{key}")))
-                    .collect(),
-            );
-        }
+        let mut extractor: Box<dyn LogSourceExtractor<LogsourceEvent<'_>>> = Box::new(VectorLogSourceExtractor {});
 
         if let Some(static_ls) = &self.logsource.event_logsource {
             let parsed = parse_logsource_kv(static_ls)

@@ -14,7 +14,7 @@ vector <--(config, http)-- api
 
 - **api** — HTTP/UI and Vector config generator. Serves the config that Vector
   loads over HTTP. One image is shared with detection (`image.repository`).
-- **detection** — `rsigma-detection`. Receives OCSF events on gRPC, runs Sigma
+- **detection** — the `detection` service (rsigma engine). Receives OCSF events on gRPC, runs Sigma
   rules, emits findings back to Vector. Rules live on a persistent volume.
 - **vector** — the fork with parquet codecs and env interpolation. An init
   container clones the OCSF parquet schemas and remap VRL into the pod; only

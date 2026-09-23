@@ -7,6 +7,7 @@
 //! [`RuleHeader`] (`rule_title`, `rule_id`, `level`, `tags`) and the match body.
 //! It does not carry a full `SigmaRule`. Thus this module reads from the result
 //! header.
+//! 
 
 use rsigma_eval::{EvaluationResult, ResultBody, RuleHeader};
 use rsigma_parser::Level;
@@ -83,7 +84,7 @@ fn base_finding(header: &RuleHeader) -> Value {
             "version": "1.8.0",
             "product": {
                 "vendor_name": "StrIEM",
-                "name": "rsigma-detection"
+                "name": "StrIEM Detection"
             }
         },
         "finding_info": {

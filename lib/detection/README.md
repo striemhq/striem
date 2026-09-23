@@ -1,4 +1,4 @@
-# rsigma-detection
+# detection
 
 A variant of StrIEM's `detection` service. The [rsigma](https://github.com/timescale/rsigma)
 engine drives it. It is a replacement for StrIEM's built-in detection service.
@@ -47,7 +47,7 @@ event-to-finding round trip is in [`tests/handler.rs`](tests/handler.rs).
 ## Running
 
 ```sh
-cargo run -p rsigma-detection -- \
+cargo run -p detection -- \
   --rules ./rules \
   --input 0.0.0.0:6000 \
   --output http://vector:6001 \
@@ -104,7 +104,7 @@ the place where you route the findings:
 [sinks.to_detector]
 type = "vector"
 inputs = ["parse_logs"]
-address = "http://rsigma-detection:6000"
+address = "http://detection:6000"
 
 [sources.from_detector]
 type = "vector"
@@ -113,7 +113,7 @@ address = "0.0.0.0:6001"
 
 ## Relationship to the workspace
 
-`rsigma-detection` is a member of the StrIEM Cargo workspace. It path-depends on
+`detection` is a member of the StrIEM Cargo workspace. It path-depends on
 StrIEM's `lib/common` and `lib/vector`. It depends on the rsigma engine crates
 (`rsigma-parser`, `rsigma-eval`, `rsigma-runtime`) as **git dependencies** pinned
 to a tag. Thus the Docker image builds on its own.
@@ -132,7 +132,7 @@ The service ships in the shared `striem:latest` image. It runs as the
 `detection` service in `docker-compose.yaml`:
 
 ```sh
-docker compose build      # builds striem_api, usdetect, and rsigma-detection
+docker compose build      # builds striem_api and detection
 docker compose up
 ```
 
@@ -143,6 +143,6 @@ Dockerfile sets `CARGO_NET_GIT_FETCH_WITH_CLI=true`. Thus the system git does th
 authentication.
 
 The compose runtime configuration uses the `RSIGMA_DETECTION_*` variables (see
-the table above). `rsigma-detection` hosts the detection-admin gRPC API on its
+the table above). `detection` hosts the detection-admin gRPC API on its
 input listener. Thus the api and UI rule proxy works against it. The rules also
 live on disk under `RSIGMA_DETECTION_RULES`.

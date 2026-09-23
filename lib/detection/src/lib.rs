@@ -1,11 +1,46 @@
-//! Detection-admin gRPC protocol code.
+//! # detection
 //!
-//! The build makes this code from `proto/detection.proto` (package
-//! `striem.detection.v1`). This crate has only the protocol. It has the
-//! `Detections` service client stubs and server stubs. It also has the message
-//! types. The detection microservice (server) and the API service (client)
-//! share these types.
+//! A StrIEM detection-service variant powered by the rsigma engine.
+//!
+//! ```text
+//!   Vector ──gRPC PushEvents──▶ [striem_vector server] ──▶ LogProcessor / RuntimeEngine
+//!                                                                 │  logsource_compatible
+//!                                                                 │  conflict pruning
+//!                                                                 ▼
+//!   Vector ◀─gRPC PushEvents── [striem_vector client] ◀── OCSF Detection Findings (2004)
+//! ```
+//!
+//! This crate uses StrIEM's Vector input and output ([`striem_vector`]) and its
+//! event model ([`striem_common`]) with no change. But it replaces the `sigmars`
+//! detection engine with rsigma-runtime's
+//! [`LogProcessor`](rsigma_runtime::LogProcessor) around a
+//! [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). Each match becomes an OCSF
+//! `Detection Finding` (class_uid 2004). The crate sends the finding to a
+//! downstream Vector.
+//!
+//! ## The pruning path
+//!
+//! StrIEM's `detection` service selects rules with a logsource **subset** filter
+//! (a rule runs only if its logsource is a subset of the event's logsource).
+//! This service installs a
+//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) on the engine in
+//! place of the subset filter. This selects rsigma's **conflict-based**
+//! `logsource_compatible` evaluation. The engine skips a rule only when a
+//! logsource dimension of the rule *conflicts* with the event's extracted
+//! logsource. A rule with no conflict still runs. A rule with no logsource also
+//! runs. An event with no logsource evaluates against all the rules (fail-open).
+//! See [`config`] for the configuration of the extractor.
 
-#![allow(clippy::all)]
+pub mod admin;
+pub mod config;
+pub mod detection;
+pub mod event;
+pub mod ocsf;
+pub mod service;
+mod logsource;
+mod proto;
 
-include!(concat!(env!("OUT_DIR"), "/striem.detection.v1.rs"));
+pub use config::{Config, LogsourceConfig};
+pub use detection::DetectionHandler;
+pub use service::DetectionService;
+pub use proto::*;

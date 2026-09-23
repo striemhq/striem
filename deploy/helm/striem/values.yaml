@@ -48,7 +48,7 @@ api:
   podAnnotations: {}
 
 # ---------------------------------------------------------------------------
-# Detection service (rsigma-detection)
+# Detection service (rsigma engine)
 # ---------------------------------------------------------------------------
 detection:
   replicas: 1

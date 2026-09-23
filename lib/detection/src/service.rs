@@ -1,6 +1,6 @@
 //! The detection microservice that you can run.
 //!
-//! This module connects all the parts to run rsigma-detection:
+//! This module connects all the parts to run the detection service:
 //! - StrIEM's Vector gRPC input listener ([`striem_vector::Server`]),
 //! - the rsigma [`RuntimeEngine`] and [`LogProcessor`]. They have a
 //!   [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor), so the evaluation
@@ -20,11 +20,11 @@ use log::{debug, info, warn};
 use rsigma_eval::CorrelationConfig;
 use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
 use striem_common::{SysMessage, event::Event};
-use striem_detection::detections_server::DetectionsServer;
+use crate::proto::sigma_collection_server::SigmaCollectionServer;
 use striem_vector::{Client as VectorClient, Server as VectorServer};
 use tokio::sync::broadcast;
 
-use crate::admin::DetectionAdmin;
+use crate::admin::CollectionAdmin;
 use crate::config::Config;
 use crate::detection::DetectionHandler;
 
@@ -111,7 +111,7 @@ impl DetectionService {
         let vector_service = server.service()?;
         // Rule administration (List/Get/Create/SetEnabled) on the same gRPC
         // server. It uses the engine's on-disk rules directory.
-        let admin = DetectionsServer::new(DetectionAdmin::new(self.processor.clone()));
+        let admin = SigmaCollectionServer::new(CollectionAdmin::new(self.processor.clone()));
         info!("... detection service listening on {addr}");
 
         let mut shutdown = self.sys.subscribe();

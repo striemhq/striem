@@ -1,4 +1,4 @@
-//! An end-to-end test that rsigma-detection prunes on the conflict-based
+//! An end-to-end test that the detection service prunes on the conflict-based
 //! `logsource_compatible` path. The logsource comes from each event's
 //! `metadata["logsource"]` (StrIEM's convention). It does not come from the log
 //! body.
@@ -15,8 +15,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rsigma_detection::DetectionHandler;
-use rsigma_detection::config::{Config, LogsourceConfig};
+use striem_detection::DetectionHandler;
+use striem_detection::config::{Config, LogsourceConfig};
 use rsigma_eval::CorrelationConfig;
 use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
 use serde_json::json;

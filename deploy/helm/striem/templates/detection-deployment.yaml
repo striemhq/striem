@@ -27,7 +27,7 @@ spec:
         - name: detection
           image: {{ include "striem.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["sh", "-c", "mkdir -p {{ .Values.detection.rulesPath | default "/data/detections" }} && exec rsigma-detection"]
+          command: ["sh", "-c", "mkdir -p {{ .Values.detection.rulesPath | default "/data/detections" }} && exec detection"]
           ports:
             - name: grpc
               containerPort: {{ .Values.detection.grpcPort }}
