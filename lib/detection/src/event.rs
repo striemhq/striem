@@ -136,18 +136,15 @@ mod tests {
     }
 
     #[test]
-    fn reserved_paths_read_logsource() {
+    fn logsource_is_read_by_dimension_not_by_field_path() {
         let data = json!({ "EventID": 1 });
         let ev = LogSourceEvent::new(&data, ls(Some("windows"), Some("sysmon")));
-        assert_eq!(
-            ev.get_field("__rsigma_ls.product").unwrap().as_str().as_deref(),
-            Some("windows")
-        );
-        assert_eq!(
-            ev.get_field("__rsigma_ls.service").unwrap().as_str().as_deref(),
-            Some("sysmon")
-        );
-        assert!(ev.get_field("__rsigma_ls.category").is_none());
+        // The extractor reads the logsource through `logsource_dim`.
+        assert_eq!(ev.logsource_dim("product"), Some("windows"));
+        assert_eq!(ev.logsource_dim("service"), Some("sysmon"));
+        assert_eq!(ev.logsource_dim("category"), None);
+        // The logsource is not a field of the event, so a rule cannot match it.
+        assert!(ev.get_field("__rsigma_ls.product").is_none());
     }
 
     #[test]
