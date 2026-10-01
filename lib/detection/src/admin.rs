@@ -6,10 +6,10 @@
 //! service gives.
 //!
 //! rsigma manages the rules **on disk**. Thus this service is a thin layer over
-//! the engine's rules directory ([`LogProcessor::rules_path`]). It reads and
+//! the engine's rules directory ([`Processor::rules_path`]). It reads and
 //! parses the rule files for `List` and `Get`. It writes new files for
 //! `Create`. It adds or removes a `.disabled` suffix for `SetEnabled`. After
-//! each change, it reloads the engine with [`LogProcessor::reload_rules`]. A
+//! each change, it reloads the engine with [`Processor::reload_rules`]. A
 //! disabled rule keeps an extension that is not `.yml`. Thus rsigma's loader
 //! skips it, but this service still shows it.
 
@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rsigma_parser::{SigmaRule, parse_sigma_yaml};
-use rsigma_runtime::LogProcessor;
 use serde_json::json;
 use tokio::task::spawn_blocking;
 use tonic::{Request, Response, Status};
@@ -27,15 +26,17 @@ use crate::proto::{
     SetEnabledRequest, sigma_collection_server::SigmaCollection
 };
 
+use crate::engine::Processor;
+
 const DISABLED_SUFFIX: &str = ".disabled";
 
 /// The gRPC service for rule administration over the engine's rules directory.
 pub struct CollectionAdmin {
-    processor: Arc<LogProcessor>,
+    processor: Arc<Processor>,
 }
 
 impl CollectionAdmin {
-    pub fn new(processor: Arc<LogProcessor>) -> Self {
+    pub fn new(processor: Arc<Processor>) -> Self {
         Self { processor }
     }
 }

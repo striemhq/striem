@@ -3,13 +3,12 @@
 //! This module gives REST endpoints for these tasks:
 //! - Source management (add or remove a data source)
 //! - Detection rule management (list, enable, disable, or upload a rule)
-//! - Data queries (DuckDB SQL queries on Parquet files)
+//! - Alerts and live search (read through [`StrIEMData`](crate::data::StrIEMData))
 //! - Vector configuration generation
 //!
 //! # Architecture
 //! - Axum does the HTTP routing and the middleware.
 //! - Tower HTTP does the CORS and serves the static files.
-//! - A DuckDB connection pool runs the queries.
 //! - A shared state (Arc) holds the detection rules and the configuration.
 
 use std::sync::Arc;
@@ -26,21 +25,15 @@ use tower_http::services::ServeDir;
 use striem_detection::sigma_collection_client::SigmaCollectionClient;
 
 use striem_config::StrIEMConfig;
-use striem_config::StringOrList;
 
 use striem_common::SysMessage;
 
 use crate::{
-    ApiState, actions::Mcp, features::feature_flag_middleware, initdb, routes::create_router, store,
+    ApiState, data::NoData, features::feature_flag_middleware, routes::create_router,
+    store::{JsonFileStore, STORE_FILE, Store},
 };
 
 /// Starts the API server and runs it.
-///
-/// # Database Initialization
-/// This function makes a DuckDB connection pool if you configure storage. It
-/// uses a file database if you set `data_dir`. If not, it uses an in-memory
-/// database. It starts `parquet_metadata_cache` for faster queries on large
-/// datasets.
 ///
 /// # UI Serving
 /// This function serves the Next.js static export. It reads the files from the
@@ -52,7 +45,9 @@ pub async fn serve(
     let config_container = config.clone();
     let config = config.load();
 
-    let mut features: Vec<String> = Vec::new();
+    // The sources and sinks are always saved (see the store below), so the UI
+    // can offer to add them.
+    let features: Vec<String> = vec!["persistence".to_string()];
 
     // The detection microservice manages the detection rules. The API reaches it
     // over gRPC. The connection is lazy, so the API can start before the
@@ -65,30 +60,21 @@ pub async fn serve(
     );
     info!("detection admin client targeting {}", endpoint);
 
-    // Make the database connection pool.
-    let db = initdb(&config).inspect(|_| {
-        #[cfg(feature = "duckdb")]
-        features.push("duckdb".to_string());
-    });
-
-    let store = store::open(&db);
+    // The API does not read the stored event data. The data endpoints use the
+    // stub `NoData`.
+    //
+    // The sources and sinks are saved in a JSON file in the `db` directory
+    // (STRIEM_DB), or in the working directory if that is not set. A store file
+    // that is not valid stops the start, so that no change writes over it.
+    let store_path = config
+        .db
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(STORE_FILE);
+    let store: Arc<dyn Store> = Arc::new(JsonFileStore::open(&store_path)?);
+    info!("sources and sinks are saved in {}", store_path.display());
     let sources = Arc::new(RwLock::new(store.load_sources().unwrap_or_default()));
     let sinks = Arc::new(RwLock::new(store.load_sinks().unwrap_or_default()));
-
-    let actions = if let Some(mcp_config) = &config.api.mcp {
-        match &mcp_config.url {
-            StringOrList::String(url) => Some(Arc::new(Mcp::new(url.clone()))),
-            StringOrList::List(urls) if !urls.is_empty() => {
-                Some(Arc::new(Mcp::new(urls[0].clone())))
-            }
-            _ => None,
-        }
-    } else {
-        None
-    }
-    .inspect(|_| {
-        features.push("mcp".to_string());
-    });
 
     let ui = config
         .api
@@ -110,8 +96,7 @@ pub async fn serve(
 
     let state = ApiState {
         detections,
-        actions,
-        db,
+        data: Arc::new(NoData),
         config: config_container,
         sys: sys.clone(),
         features: HeaderValue::from_str(&features.join(","))?,

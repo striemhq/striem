@@ -18,7 +18,7 @@ use std::sync::Arc;
 use striem_detection::DetectionHandler;
 use striem_detection::config::{Config, LogsourceConfig};
 use rsigma_eval::CorrelationConfig;
-use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
+use striem_detection::{Processor, RuntimeEngine};
 use serde_json::json;
 use striem_common::{SysMessage, event::Event};
 use tokio::sync::{broadcast, mpsc};
@@ -65,7 +65,7 @@ fn write_rules(dir: &std::path::Path) {
 
 /// Makes a processor in the same way as `DetectionService::new`. It installs the
 /// logsource extractor from the config, then it loads the rules.
-fn processor_for(dir: &std::path::Path, logsource: LogsourceConfig) -> Arc<LogProcessor> {
+fn processor_for(dir: &std::path::Path, logsource: LogsourceConfig) -> Arc<Processor> {
     let config = Config {
         input: "0.0.0.0:6000".parse().unwrap(),
         output: None,
@@ -82,7 +82,7 @@ fn processor_for(dir: &std::path::Path, logsource: LogsourceConfig) -> Arc<LogPr
     );
     engine.set_logsource_extractor(extractor);
     engine.load_rules().expect("rules load");
-    Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)))
+    Arc::new(Processor::new(engine))
 }
 
 /// A matching event. Its logsource, if there is one, is in the metadata.
@@ -100,7 +100,7 @@ fn event(logsource: Option<serde_json::Value>) -> Event {
 
 /// Runs one event through the handler. Collects the titles of the rules that
 /// fired.
-async fn fired_titles(processor: Arc<LogProcessor>, event: Event) -> Vec<String> {
+async fn fired_titles(processor: Arc<Processor>, event: Event) -> Vec<String> {
     let (src_tx, src_rx) = mpsc::channel::<Vec<Event>>(4);
     let (dest_tx, mut dest_rx) = broadcast::channel::<Arc<Vec<Event>>>(4);
     let (_sys_tx, sys_rx) = broadcast::channel::<SysMessage>(4);

@@ -3,7 +3,7 @@
 //! A StrIEM detection-service variant powered by the rsigma engine.
 //!
 //! ```text
-//!   Vector ──gRPC PushEvents──▶ [striem_vector server] ──▶ LogProcessor / RuntimeEngine
+//!   Vector ──gRPC PushEvents──▶ [striem_vector server] ──▶ Processor / RuntimeEngine
 //!                                                                 │  logsource_compatible
 //!                                                                 │  conflict pruning
 //!                                                                 ▼
@@ -12,9 +12,9 @@
 //!
 //! This crate uses StrIEM's Vector input and output ([`striem_vector`]) and its
 //! event model ([`striem_common`]) with no change. But it replaces the `sigmars`
-//! detection engine with rsigma-runtime's
-//! [`LogProcessor`](rsigma_runtime::LogProcessor) around a
-//! [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). Each match becomes an OCSF
+//! detection engine with rsigma: a [`Processor`](engine::Processor) around a
+//! [`RuntimeEngine`](engine::RuntimeEngine), modeled on rsigma-runtime's. Each
+//! match becomes an OCSF
 //! `Detection Finding` (class_uid 2004). The crate sends the finding to a
 //! downstream Vector.
 //!
@@ -22,8 +22,7 @@
 //!
 //! StrIEM's `detection` service selects rules with a logsource **subset** filter
 //! (a rule runs only if its logsource is a subset of the event's logsource).
-//! This service installs a
-//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) on the engine in
+//! This service installs a [`VectorLogSourceExtractor`] on the engine in
 //! place of the subset filter. This selects rsigma's **conflict-based**
 //! `logsource_compatible` evaluation. The engine skips a rule only when a
 //! logsource dimension of the rule *conflicts* with the event's extracted
@@ -34,13 +33,16 @@
 pub mod admin;
 pub mod config;
 pub mod detection;
+pub mod engine;
 pub mod event;
+pub mod logsource;
 pub mod ocsf;
 pub mod service;
-mod logsource;
 mod proto;
 
 pub use config::{Config, LogsourceConfig};
 pub use detection::DetectionHandler;
+pub use engine::{EngineStats, Processor, RuntimeEngine};
+pub use logsource::VectorLogSourceExtractor;
 pub use service::DetectionService;
 pub use proto::*;

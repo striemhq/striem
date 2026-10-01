@@ -8,10 +8,9 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use rsigma_eval::LogSourceExtractor;
 use rsigma_parser::LogSource;
 
-use crate::{event::LogsourceEvent, logsource::VectorLogSourceExtractor};
+use crate::logsource::VectorLogSourceExtractor;
 
 /// The full service configuration.
 #[derive(Debug, Clone)]
@@ -35,13 +34,12 @@ pub struct Config {
 /// pruning.
 ///
 /// The logsource comes from each event's `metadata["logsource"]` (StrIEM's
-/// convention). It does not come from the log body. See
-/// [`crate::logsource_event`]. The extractor reads it through the reserved
-/// [`LS_PREFIX`] namespace that a
-/// [`LogsourceEvent`](crate::logsource_event::LogsourceEvent) gives.
+/// convention). It does not come from the log body. See [`crate::event`]. A
+/// [`LogsourceEvent`](crate::event::LogsourceEvent) carries it beside the body,
+/// and the [`VectorLogSourceExtractor`] reads it from there.
 #[derive(Debug, Clone)]
 pub struct LogsourceConfig {
-    /// When this is `false`, the service installs no [`LogSourceExtractor`]. The
+    /// When this is `false`, the service installs no extractor. The
     /// engine then evaluates every rule against every event (no pruning).
     pub enabled: bool,
     /// The override for the sub-key of `metadata["logsource"]` that each
@@ -66,17 +64,16 @@ impl Default for LogsourceConfig {
 }
 
 impl Config {
-    /// Makes the [`LogSourceExtractor`] for the conflict-pruning path. Gives
-    /// `Ok(None)` when pruning is off.
-    pub fn build_logsource_extractor(&self) -> Result<Option<Box<dyn LogSourceExtractor<LogsourceEvent<'_>>>>, String> {
+    /// Makes the [`VectorLogSourceExtractor`] for the conflict-pruning path.
+    /// Gives `Ok(None)` when pruning is off.
+    pub fn build_logsource_extractor(&self) -> Result<Option<VectorLogSourceExtractor>, String> {
         if !self.logsource.enabled {
             return Ok(None);
         }
 
-        // The extractor reads the logsource through the reserved LS_PREFIX
-        // namespace of `LogsourceEvent`, which maps it back from the event
-        // metadata. `field_map` only sets which metadata sub-key feeds each
-        // dimension. The standard keys are the defaults.
+        // The extractor reads the logsource that `LogsourceEvent` carries from
+        // the event metadata. `field_map` only sets which metadata sub-key feeds
+        // each dimension. The standard keys are the defaults.
         let (product_key, service_key, category_key, custom) = match &self.logsource.field_map {
             Some(map) => {
                 let parsed = parse_logsource_kv(map)
@@ -96,7 +93,8 @@ impl Config {
             ),
         };
 
-        let mut extractor: Box<dyn LogSourceExtractor<LogsourceEvent<'_>>> = Box::new(VectorLogSourceExtractor {});
+        let mut extractor =
+            VectorLogSourceExtractor::new().with_keys(product_key, service_key, category_key, custom);
 
         if let Some(static_ls) = &self.logsource.event_logsource {
             let parsed = parse_logsource_kv(static_ls)

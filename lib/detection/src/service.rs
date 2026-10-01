@@ -2,9 +2,9 @@
 //!
 //! This module connects all the parts to run the detection service:
 //! - StrIEM's Vector gRPC input listener ([`striem_vector::Server`]),
-//! - the rsigma [`RuntimeEngine`] and [`LogProcessor`]. They have a
-//!   [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor), so the evaluation
-//!   takes the `logsource_compatible` conflict-pruning path.
+//! - the [`RuntimeEngine`] and its [`Processor`]. The engine has a
+//!   [`VectorLogSourceExtractor`](crate::VectorLogSourceExtractor), so the
+//!   evaluation takes the `logsource_compatible` conflict-pruning path.
 //! - the [`DetectionHandler`] that changes events into OCSF findings,
 //! - an optional downstream Vector [`Client`](striem_vector::Client) that
 //!   forwards these findings.
@@ -18,7 +18,6 @@ use anyhow::{Context, Result};
 use backoff::{ExponentialBackoff, future::retry};
 use log::{debug, info, warn};
 use rsigma_eval::CorrelationConfig;
-use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
 use striem_common::{SysMessage, event::Event};
 use crate::proto::sigma_collection_server::SigmaCollectionServer;
 use striem_vector::{Client as VectorClient, Server as VectorServer};
@@ -27,12 +26,13 @@ use tokio::sync::broadcast;
 use crate::admin::CollectionAdmin;
 use crate::config::Config;
 use crate::detection::DetectionHandler;
+use crate::engine::{Processor, RuntimeEngine};
 
 /// The detection service. It loads the rules. It holds the engine and the
 /// channels for the input → detect → output pipeline.
 pub struct DetectionService {
     config: Config,
-    processor: Arc<LogProcessor>,
+    processor: Arc<Processor>,
     /// The broadcast channel that sends the findings to the downstream Vector
     /// client.
     events: broadcast::Sender<Arc<Vec<Event>>>,
@@ -74,7 +74,7 @@ impl DetectionService {
             stats.detection_rules, stats.correlation_rules, config.logsource.enabled
         );
 
-        let processor = Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)));
+        let processor = Arc::new(Processor::new(engine));
 
         Ok(Self {
             config,

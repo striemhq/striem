@@ -30,16 +30,13 @@ use serde_json::Value;
 /// match, and it cannot leak into the detection match.
 pub const LS_PREFIX: &str = "__rsigma_ls.";
 
-/// A log-data event with a [`LogSource`] from a separate source.
-///
-/// The match, the keyword search, and the serialization use only `data`. Only
-/// the [`LS_PREFIX`] field namespace shows the logsource, for the extractor.
-pub struct LogsourceEvent<'a> {
+/// A log-data event with its associated [`LogSource`]
+pub struct LogSourceEvent<'a> {
     data: JsonEvent<'a>,
     logsource: LogSource,
 }
 
-impl<'a> LogsourceEvent<'a> {
+impl<'a> LogSourceEvent<'a> {
     /// Joins a borrowed data payload with the logsource from the metadata.
     pub fn new(data: &'a Value, logsource: LogSource) -> Self {
         Self {
@@ -51,7 +48,7 @@ impl<'a> LogsourceEvent<'a> {
     /// Gets a reserved-namespace dimension (the part after [`LS_PREFIX`]) from
     /// the given logsource. `product`, `service`, and `category` use the
     /// standard fields. Any other name reads a custom dimension.
-    fn logsource_dim(&self, dim: &str) -> Option<&str> {
+    pub(crate) fn logsource_dim(&self, dim: &str) -> Option<&str> {
         match dim {
             "product" => self.logsource.product.as_deref(),
             "service" => self.logsource.service.as_deref(),
@@ -61,13 +58,13 @@ impl<'a> LogsourceEvent<'a> {
     }
 }
 
-impl Event for LogsourceEvent<'_> {
+impl Event for LogSourceEvent<'_> {
     fn get_field(&self, path: &str) -> Option<EventValue<'_>> {
-        if let Some(dim) = path.strip_prefix(LS_PREFIX) {
+        /*if let Some(dim) = path.strip_prefix(LS_PREFIX) {
             return self
                 .logsource_dim(dim)
                 .map(|v| EventValue::Str(Cow::Borrowed(v)));
-        }
+        }*/
         self.data.get_field(path)
     }
 
@@ -141,7 +138,7 @@ mod tests {
     #[test]
     fn reserved_paths_read_logsource() {
         let data = json!({ "EventID": 1 });
-        let ev = LogsourceEvent::new(&data, ls(Some("windows"), Some("sysmon")));
+        let ev = LogSourceEvent::new(&data, ls(Some("windows"), Some("sysmon")));
         assert_eq!(
             ev.get_field("__rsigma_ls.product").unwrap().as_str().as_deref(),
             Some("windows")
@@ -156,7 +153,7 @@ mod tests {
     #[test]
     fn data_fields_delegate_and_logsource_is_invisible() {
         let data = json!({ "EventID": 1, "CommandLine": "whoami" });
-        let ev = LogsourceEvent::new(&data, ls(Some("windows"), None));
+        let ev = LogSourceEvent::new(&data, ls(Some("windows"), None));
 
         // A real data field resolves.
         assert_eq!(ev.get_field("CommandLine").unwrap().as_str().as_deref(), Some("whoami"));

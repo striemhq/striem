@@ -174,7 +174,11 @@ pub(crate) async fn execute_action_by_id(
 
     let alert = fetch_alert(alert_id, file, &state)
         .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("alert {alert_id} not found"),
+        ))?;
 
     params.entry("data").or_insert_with(|| alert);
 

@@ -33,11 +33,12 @@ api:
   service:
     type: ClusterIP
     port: 8080
-  # DuckDB query-metadata directory. Small and rebuildable, so ephemeral by
-  # default. Enable persistence to keep it across restarts.
+  # The api's `db` directory (STRIEM_DB). It holds store.json: the configured
+  # sources, destinations, and notifications. Keep it persistent, or the
+  # configuration is lost when the pod restarts.
   db:
     persistence:
-      enabled: false
+      enabled: true
       size: 5Gi
       storageClass: ""
       accessMode: ReadWriteOnce

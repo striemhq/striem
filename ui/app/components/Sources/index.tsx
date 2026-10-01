@@ -112,7 +112,7 @@ export default function SourcesTab() {
       <div className="panel flex-between">
         <h2 className="heading-section">Sources</h2>
         <div className="flex gap-2">
-          { hasFeature("duckdb") &&
+          { hasFeature("persistence") &&
             <button 
               onClick={() => setShowAddModal(true)}
               className="btn-primary"

@@ -22,18 +22,15 @@ description = "an open-source SIEM powered by Vector"
 [workspace.dependencies]
 anyhow = "1.0"
 arc-swap = "1"
-arrow-json = "58"
 axum = { version = "0.8"}
 backoff = { version = "0.4", features = ["tokio"]}
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.15"
-duckdb = { version = "1.10504", features = ["modern-full", "json", "parquet", "vtab", "bundled", "r2d2" ] }
 env_logger = "0.11"
 erased-serde = "0.4"
 log = "0.4"
 prost = { version = "0.13" }
 prost-types = "0.13"
-r2d2 = "0.8"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 rmcp = { version = "0.8", features = ["client", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 rsigma-eval = { git = "http://github.com/sonnens/rsigma", branch = "logsource_extractor_trait" }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use striem_detection::DetectionHandler;
 use striem_detection::config::{Config, LogsourceConfig};
 use rsigma_eval::CorrelationConfig;
-use rsigma_runtime::{LogProcessor, NoopMetrics, RuntimeEngine};
+use striem_detection::{Processor, RuntimeEngine};
 use striem_common::{SysMessage, event::Event};
 use tokio::sync::{broadcast, mpsc};
 
@@ -27,7 +27,7 @@ detection:
     condition: sel
 "#;
 
-fn processor(dir: &std::path::Path) -> Arc<LogProcessor> {
+fn processor(dir: &std::path::Path) -> Arc<Processor> {
     let config = Config {
         input: "0.0.0.0:6000".parse().unwrap(),
         output: None,
@@ -44,7 +44,7 @@ fn processor(dir: &std::path::Path) -> Arc<LogProcessor> {
     );
     engine.set_logsource_extractor(extractor);
     engine.load_rules().unwrap();
-    Arc::new(LogProcessor::new(engine, Arc::new(NoopMetrics)))
+    Arc::new(Processor::new(engine))
 }
 
 #[tokio::test]

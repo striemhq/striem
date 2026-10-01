@@ -1,23 +1,19 @@
-use crate::ApiState;
-use anyhow::{Result, anyhow};
+//! The alerts endpoints. They read through [`StrIEMData`](crate::data::StrIEMData).
+
+use std::collections::HashMap;
+
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     routing::get,
 };
-use chrono::{DateTime, Utc, Datelike};
-use log;
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use chrono::{DateTime, Utc};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Alert {
-    pub id: String,
-    pub time: String,
-    pub severity: String,
-    pub title: String,
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
+use crate::ApiState;
+use crate::data::Alert;
+
+/// The count of alerts that the list endpoint gives.
+const ALERTS_LIMIT: usize = 10;
 
 pub fn create_router() -> axum::Router<ApiState> {
     axum::Router::new()
@@ -25,192 +21,68 @@ pub fn create_router() -> axum::Router<ApiState> {
         .route("/{id}", get(get_alert_by_id))
 }
 
+/// Lists the newest alerts. The `start` and `end` query parameters (RFC 3339)
+/// set the time range. The default is the last 24 hours.
 async fn get_alerts(
     State(state): State<ApiState>,
-    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> Result<axum::Json<Vec<Alert>>, (axum::http::StatusCode, String)> {
-    let config = state.config.load();
-
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<axum::Json<Vec<Alert>>, (StatusCode, String)> {
+    let now = Utc::now();
     let start = params
         .get("start")
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or(Utc::now() - chrono::Duration::hours(24));
-
+        .unwrap_or(now - chrono::Duration::hours(24));
     let end = params
         .get("end")
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or(Utc::now());
+        .unwrap_or(now);
 
-    let db = if let Some(pool) = &state.db {
-        pool.get()
-            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    } else {
-        return Ok(axum::Json(Vec::new()));
-    };
-
-    let basepath = {
-        if let Some(path) = config.storage.as_ref().map(|s| s.path.clone()) {
-            path.clone()
-        } else {
-            return Ok(axum::Json(Vec::new()));
-        }
-    };
-
-    let findings_path = basepath.join("findings/detection_finding");
-
-    if !findings_path.exists() {
-        return Ok(axum::Json(Vec::new()));
-    }
-
-    let mut sql = r#"SELECT metadata.uid,
-                              time,
-                              finding_info.title,
-                              severity_id,
-                              observables,
-                              filename,
-                              CAST(day AS INTEGER) AS _day,
-                              CAST(month AS INTEGER) AS _month,
-                              CAST(year AS INTEGER) AS _year"#
-        .to_string();
-
-    sql = format!(
-        "{} FROM read_parquet(\"{}\") WHERE",
-        sql,
-        findings_path.join("**/*.parquet").to_string_lossy()
-    );
-
-    // time range filtering by the Hive columns
-    sql = format!(
-        "{} (_year >= {} AND _month >= {} AND _day >= {})",
-        sql,
-        start.year(),
-        start.month(),
-        start.day()
-    );
-
-    sql = format!(
-        "{} AND (_year <= {} AND _month <= {} AND _day <= {})",
-        sql,
-        end.year(),
-        end.month(),
-        end.day()
-    );
-
-    sql = format!(
-        "{} AND (time >= ? AND time <= ?) ORDER BY time DESC LIMIT 10;",
-        sql
-    );
-
-    let mut query = db
-        .prepare(&sql)
+    let alerts = state
+        .data
+        .list_alerts(start, end, ALERTS_LIMIT)
+        .await
         .map_err(|e| {
-            log::error!("Error preparing query: {}", e);
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?;
-
-    let alerts = query
-        .query_map(duckdb::params![start, end], |row| {
-            let fname = row
-                .get::<_, String>(5)
-                .map(|fname| {
-                    PathBuf::from(&fname)
-                        .strip_prefix(&basepath)
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|_| PathBuf::from(&fname))
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_default();
-
-            Ok(Alert {
-                id: row.get(0).unwrap_or_default(),
-                time: row.get(1).unwrap_or_default(),
-                title: row.get(2).unwrap_or_default(),
-                severity: row.get(3).unwrap_or_default(),
-                extra: HashMap::from([
-                    ("_file".to_string(), serde_json::Value::from(fname)),
-                    (
-                        "observables".to_string(),
-                        serde_json::Value::from(
-                            row.get::<_, Option<String>>(4).unwrap_or_default(),
-                        ),
-                    ),
-                ]),
-            })
-        })
-        .and_then(|r| r.collect::<Result<Vec<_>, _>>())
-        .map_err(|e| {
-            log::error!("Error fetching alerts: {}", e);
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            log::error!("error fetching alerts: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
 
     Ok(axum::Json(alerts))
 }
 
+/// Gets the full finding of one alert. The `f` query parameter is the `_file`
+/// hint from the alerts list.
 async fn get_alert_by_id(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let fname = params.get("f").map(|s| s.as_str());
-    Ok(axum::Json(fetch_alert(&id, fname, &state).await.map_err(
-        |e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-    )?))
+) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
+    let file = params.get("f").map(String::as_str);
+    fetch_alert(&id, file, &state)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map(axum::Json)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("alert {id} not found")))
 }
 
+/// Gets one alert, with its empty fields removed. The actions endpoint uses it
+/// too.
 pub(crate) async fn fetch_alert(
     id: &str,
-    fname: Option<&str>,
+    file: Option<&str>,
     state: &ApiState,
-) -> Result<serde_json::Value> {
-    let mut sql = r#"SELECT row_to_json(t) from (SELECT * "#.to_string();
-
-    let config = state.config.load();
-
-    if let Some(file) = fname
-        && file.trim() != ""
-    {
-        sql = format!(
-            "{} FROM read_parquet(\"{}/{}\")",
-            sql,
-            config
-                .storage
-                .as_ref()
-                .map(|s| s.path.to_string_lossy().to_string())
-                .ok_or_else(|| anyhow!("data path not set"))?,
-            file.trim()
-        );
-    } else {
-        sql = format!(
-            "{} FROM read_parquet(\"{}/findings/detection_finding/**/*.parquet\")",
-            sql,
-            config
-                .storage
-                .as_ref()
-                .map(|s| s.path.to_string_lossy().to_string())
-                .ok_or_else(|| anyhow!("data path not set"))?
-        );
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let file = file.map(str::trim).filter(|f| !f.is_empty());
+    let mut alert = state.data.get_alert(id, file).await?;
+    if let Some(alert) = alert.as_mut() {
+        strip_nulls(alert);
     }
-    sql = format!("{} WHERE metadata.uid = ? LIMIT 1) as t;", sql);
-
-    let db = if let Some(pool) = &state.db {
-        pool.get()?
-    } else {
-        return Err(anyhow!("database not initialized"));
-    };
-
-    let mut q = db.prepare(&sql)?.query_row(duckdb::params![id], |row| {
-        let v: serde_json::Value = row.get(0)?;
-        Ok(v)
-    })?;
-
-    strip_nulls(&mut q);
-
-    Ok(q)
+    Ok(alert)
 }
 
+/// Removes the null values, and the empty objects and arrays, from a finding.
+/// Thus the detail view shows only the fields that have a value.
 fn strip_nulls(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {

@@ -1,17 +1,11 @@
-use anyhow::Result;
-use arrow_json::writer::ArrayWriter;
-use axum::extract::State;
-use log::error;
+//! The live-search endpoint. It reads through
+//! [`StrIEMData`](crate::data::StrIEMData).
+
+use axum::{extract::State, http::StatusCode};
 use serde::Deserialize;
 
 use crate::ApiState;
-
-static INTERNAL_SERVER_ERROR: fn() -> (axum::http::StatusCode, String) = || {
-    (
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "internal server error".to_string(),
-    )
-};
+use crate::data::Unavailable;
 
 #[derive(Deserialize)]
 pub struct QueryRequest {
@@ -28,79 +22,22 @@ pub fn create_router() -> axum::Router<ApiState> {
     axum::Router::new().route("/", axum::routing::post(post_query))
 }
 
+/// Runs a live-search query. The answer is a JSON array of rows. When there is
+/// no search backend, the answer is `501 Not Implemented`.
 async fn post_query(
     State(state): State<ApiState>,
     axum::extract::Json(payload): axum::extract::Json<QueryRequest>,
-) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let conn = if let Some(pool) = &state.db {
-        pool.get().map_err(|e| {
-            error!("Database Connection Error: {}", e);
-            INTERNAL_SERVER_ERROR()
-        })?
-    } else {
-        return Err(INTERNAL_SERVER_ERROR());
-    };
-
-    let data = state
-        .config
-        .load()
-        .storage
-        .as_ref()
-        .and_then(|s| s.path.as_path().to_str().map(|s| s.to_string()));
-    conn.execute(
-        "SET file_search_path = ?",
-        duckdb::params![data.as_deref().unwrap_or("")],
-    )
-    .map_err(|e| {
-        error!("Database Error: {}", e);
-        INTERNAL_SERVER_ERROR()
-    })?;
-
-    let sql = &payload.sql;
-    let limit = payload.limit;
-
-    let sql = if !sql.trim().to_lowercase().contains("limit") {
-        format!("{} LIMIT {}", sql.trim_end_matches(';'), limit)
-    } else {
-        sql.to_string()
-    };
-
-    let mut stmt = conn.prepare(&sql).map_err(|_| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "SQL Error".to_string(),
-        )
-    })?;
-
-    let res = stmt
-        .query_arrow([])
-        .map_err(|_| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "SQL Error".to_string(),
-            )
-        })?
-        .collect::<Vec<_>>();
-
-    let buf = Vec::new();
-    let mut writer = ArrayWriter::new(buf);
-    let batch_refs: Vec<&_> = res.iter().collect();
-
-    writer.write_batches(&batch_refs).map_err(|e| {
-        error!("Arrow Error writing batches: {}", e);
-        INTERNAL_SERVER_ERROR()
-    })?;
-
-    writer.finish().map_err(|e| {
-        error!("Arrow Error: {}", e);
-        INTERNAL_SERVER_ERROR()
-    })?;
-
-    let out: serde_json::Value =
-        serde_json::from_reader(writer.into_inner().as_slice()).map_err(|e| {
-            error!("JSON Serialization Error: {}", e);
-            INTERNAL_SERVER_ERROR()
-        })?;
-
-    Ok(axum::Json(out))
+) -> Result<axum::Json<serde_json::Value>, (StatusCode, String)> {
+    state
+        .data
+        .search(&payload.sql, payload.limit)
+        .await
+        .map(axum::Json)
+        .map_err(|e| {
+            if e.is::<Unavailable>() {
+                return (StatusCode::NOT_IMPLEMENTED, e.to_string());
+            }
+            log::error!("live search failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })
 }

@@ -1,7 +1,8 @@
-FROM rust:trixie AS chef
+FROM rust:slim AS chef
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       protobuf-compiler libprotobuf-dev pkg-config libssl-dev ca-certificates \
+      git build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,12 +22,10 @@ COPY lib/api/Cargo.toml lib/api/Cargo.toml
 COPY lib/common/Cargo.toml lib/common/Cargo.toml
 COPY lib/config/Cargo.toml lib/config/Cargo.toml
 COPY lib/detection/Cargo.toml lib/detection/Cargo.toml
-COPY lib/detection/proto/Cargo.toml lib/detection/proto/Cargo.toml
 COPY lib/telemetry/Cargo.toml lib/telemetry/Cargo.toml
 COPY lib/vector/Cargo.toml lib/vector/Cargo.toml
 
 COPY lib/vector/build.rs lib/vector/build.rs
-COPY lib/detection/proto/build.rs lib/detection/proto/build.rs
 
 RUN mkdir -p lib/api/src && touch lib/api/src/lib.rs
 RUN mkdir -p lib/common/src && touch lib/common/src/lib.rs
@@ -59,8 +58,8 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 # present). The detection service has no build script (it reuses lib/vector's
 # proto types).
 COPY lib/vector/build.rs lib/vector/build.rs
-COPY lib/detection/proto/build.rs lib/detection/proto/build.rs
-COPY lib/detection/proto/proto lib/detection/proto/proto
+COPY lib/detection/build.rs lib/detection/build.rs
+COPY lib/detection/proto lib/detection/proto
 
 RUN cargo +nightly chef cook --recipe-path recipe.json
 
@@ -69,10 +68,10 @@ COPY lib lib
 
 # Builds every binary we ship: striem_api (the API service) and detection (the
 # rsigma-powered detection service).
-RUN cargo +nightly build -p striem_api -p detection
+RUN cargo +nightly build -p striem_api -p striem_detection
 
 
-FROM node:25-trixie-slim AS ui-build
+FROM node:26-trixie-slim AS ui-build
 
 WORKDIR /ui
 

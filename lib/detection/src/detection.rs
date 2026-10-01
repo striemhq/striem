@@ -1,10 +1,9 @@
 //! The detection worker: input events → rsigma engine → OCSF findings.
 //!
 //! This worker is the same as StrIEM's `DetectionHandler`. But it evaluates
-//! through rsigma's [`RuntimeEngine`](rsigma_runtime::RuntimeEngine). A
-//! [`LogProcessor`](rsigma_runtime::LogProcessor) holds the engine for an atomic
-//! hot-reload. The engine's
-//! [`LogSourceExtractor`](rsigma_eval::LogSourceExtractor) drives the
+//! through the [`RuntimeEngine`](crate::engine::RuntimeEngine). A
+//! [`Processor`] holds the engine for an atomic hot-reload. The engine's
+//! [`VectorLogSourceExtractor`](crate::VectorLogSourceExtractor) drives the
 //! `logsource_compatible` conflict-pruning path.
 //!
 //! The worker gives each event to the engine as a [`LogsourceEvent`]. The log
@@ -18,12 +17,12 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use log::{debug, error, info};
-use rsigma_runtime::LogProcessor;
 use serde_json::Value;
 use striem_common::{SysMessage, event::Event};
 use uuid::Uuid;
 
-use crate::event::{LogsourceEvent, logsource_from_metadata};
+use crate::engine::Processor;
+use crate::event::{LogSourceEvent, logsource_from_metadata};
 use crate::ocsf::result_to_ocsf;
 use tokio::sync::{broadcast, mpsc};
 
@@ -34,7 +33,7 @@ pub struct DetectionHandler {
     /// The findings. The worker sends them to the downstream sinks (the Vector
     /// output client).
     dest: broadcast::Sender<Arc<Vec<Event>>>,
-    processor: Arc<LogProcessor>,
+    processor: Arc<Processor>,
     batch_size: usize,
     shutdown: broadcast::Receiver<SysMessage>,
 }
@@ -43,7 +42,7 @@ impl DetectionHandler {
     pub fn new(
         src: mpsc::Receiver<Vec<Event>>,
         dest: broadcast::Sender<Arc<Vec<Event>>>,
-        processor: Arc<LogProcessor>,
+        processor: Arc<Processor>,
         batch_size: usize,
         shutdown: broadcast::Receiver<SysMessage>,
     ) -> Self {
@@ -101,24 +100,20 @@ impl DetectionHandler {
 
             // Join each payload with the logsource from its metadata. The
             // LogsourceEvent shows this logsource only to the extractor.
-            let sigma_events: Vec<LogsourceEvent> = chunk
+            let sigma_events: Vec<LogSourceEvent> = chunk
                 .iter()
                 .zip(&payloads)
                 .map(|(event, data)| {
-                    LogsourceEvent::new(data, logsource_from_metadata(&event.metadata))
+                    LogSourceEvent::new(data, logsource_from_metadata(&event.metadata))
                 })
                 .collect();
-            let refs: Vec<&LogsourceEvent> = sigma_events.iter().collect();
+            let refs: Vec<&LogSourceEvent> = sigma_events.iter().collect();
 
             // Evaluate through the runtime engine (detection and correlation).
-            // Hold the engine lock only for the batch. `engine_snapshot` keeps
-            // the hot-reload atomic. A reload at the same time swaps the Arc.
-            // This batch finishes with the engine that it already loaded.
-            let results = {
-                let guard = self.processor.engine_snapshot();
-                let mut engine = guard.lock();
-                engine.process_batch(&refs)
-            };
+            // The processor holds the engine lock only for the batch. A reload
+            // at the same time swaps the engine. This batch finishes with the
+            // engine that it already loaded.
+            let results = self.processor.process_batch(&refs);
 
             let mut findings: Vec<Event> = Vec::new();
             for (event, result) in chunk.iter().zip(results) {

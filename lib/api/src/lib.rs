@@ -1,5 +1,5 @@
-mod actions;
 mod alerts;
+mod data;
 mod detections;
 pub mod features;
 mod graph;
@@ -13,7 +13,6 @@ mod store;
 mod vector;
 
 use arc_swap::ArcSwap;
-use log::error;
 
 use axum::http::HeaderValue;
 pub use server::serve;
@@ -24,7 +23,7 @@ use tokio::sync::RwLock;
 
 use striem_config::StrIEMConfig;
 
-use actions::Mcp;
+use data::StrIEMData;
 use sinks::Sink;
 use sources::Source;
 use store::Store;
@@ -34,16 +33,11 @@ use striem_detection::sigma_collection_client::SigmaCollectionClient;
 /// The gRPC client to the detection microservice's admin API.
 pub(crate) type DetectionClient = SigmaCollectionClient<tonic::transport::Channel>;
 
-#[cfg(feature = "duckdb")]
-pub(crate) type Pool = r2d2::Pool<duckdb::DuckdbConnectionManager>;
-#[cfg(not(feature = "duckdb"))]
-pub(crate) type Pool = ();
-
 #[derive(Clone)]
 pub(crate) struct ApiState {
     pub detections: DetectionClient,
-    pub actions: Option<Arc<Mcp>>,
-    pub db: Option<Pool>,
+    /// The read access to the stored event data (alerts, live search).
+    pub data: Arc<dyn StrIEMData>,
     pub features: HeaderValue,
     pub sys: tokio::sync::broadcast::Sender<SysMessage>,
     pub config: Arc<ArcSwap<StrIEMConfig>>,
@@ -52,97 +46,9 @@ pub(crate) struct ApiState {
     pub store: Arc<dyn Store>,
 }
 
-#[cfg(feature = "duckdb")]
-pub(crate) fn initdb(config: &StrIEMConfig) -> Option<Pool> {
-    // Make the DuckDB connection pool with the metadata cache on. The metadata
-    // cache makes queries on large Parquet datasets much faster, because it does
-    // not read the schema again and again.
-    let mut allowed = vec![
-        "'application_activity'".to_string(),
-        "'discovery'".to_string(),
-        "'findings'".to_string(),
-        "'identity_access_management'".to_string(),
-        "'iam'".to_string(),
-        "'network_activity'".to_string(),
-        "'remediation'".to_string(),
-        "'system_activity'".to_string(),
-        "'unmanned_systems'".to_string(),
-    ];
-
-    if let Some(storage) = &config.storage {
-        allowed.push(format!("'{}'", &storage.path.to_string_lossy()));
+#[cfg(not(feature = "mcp"))]
+mod actions {
+    pub fn create_router() -> axum::Router<crate::ApiState> {
+        axum::Router::new()
     }
-
-    if let Some(ref dbpath) = config.db {
-        std::fs::create_dir_all(dbpath)
-            .map_err(anyhow::Error::from)
-            .and_then(|_| {
-                let path = dbpath.join("striem.db");
-
-                allowed.extend([format!("'{}'", dbpath.to_string_lossy())]);
-
-                let allowed_str = format!("[{}]", allowed.join(", "));
-
-                duckdb::DuckdbConnectionManager::file_with_flags(
-                    path,
-                    duckdb::Config::default()
-                        .enable_object_cache(true)
-                        .map_err(anyhow::Error::from)?,
-                )
-                .map_err(anyhow::Error::from)
-                .and_then(|db| {
-                    r2d2::Pool::builder()
-                        .build(db)
-                        .inspect(|pool| {
-                            pool.get()
-                                .map(|conn| {
-                                    conn.execute(
-                                        "SET allowed_directories = ?;
-                                             SET enable_external_access = false;",
-                                        duckdb::params![&allowed_str],
-                                    )
-                                })
-                                .ok();
-                        })
-                        .map_err(anyhow::Error::from)
-                })
-            })
-            .inspect_err(|e| {
-                error!("{}", e);
-            })
-            .ok()
-    } else if config.storage.is_some() {
-        let allowed_str = format!("[{}]", allowed.join(", "));
-        duckdb::DuckdbConnectionManager::memory_with_flags(
-            duckdb::Config::default().enable_object_cache(true).ok()?,
-        )
-        .map_err(anyhow::Error::from)
-        .and_then(|db| {
-            r2d2::Pool::builder()
-                .build(db)
-                .inspect(|pool| {
-                    pool.get()
-                        .map(|conn| {
-                            conn.execute(
-                                "SET allowed_directories = ?;
-                                    SET enable_external_access = false;",
-                                duckdb::params![&allowed_str],
-                            )
-                        })
-                        .ok();
-                })
-                .map_err(anyhow::Error::from)
-        })
-        .inspect_err(|e| {
-            error!("{}", e);
-        })
-        .ok()
-    } else {
-        None
-    }
-}
-
-#[cfg(not(feature = "duckdb"))]
-pub(crate) fn db_pool(_config: &StrIEMConfig) -> Option<Pool> {
-    None
 }
