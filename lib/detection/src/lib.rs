@@ -39,6 +39,7 @@ pub mod logsource;
 pub mod ocsf;
 pub mod service;
 mod proto;
+mod rulefile;
 
 pub use config::{Config, LogsourceConfig};
 pub use detection::DetectionHandler;

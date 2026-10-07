@@ -64,8 +64,23 @@ detection:
     persistence:
       enabled: true
       size: 1Gi
+      # Ignored when hostPath.path is set.
       storageClass: ""
       accessMode: ReadWriteOnce
+      # Keep the rules in a directory on a node. When `path` is set, the chart
+      # makes a hostPath PersistentVolume (reclaim policy Retain) and binds the
+      # rules claim to it. Suited to dev and single-node clusters: the rules are
+      # only on that one node, and many pod security policies block hostPath.
+      # Note: a claim cannot change its volume after it exists. To switch an
+      # existing release to (or from) hostPath, delete the rules PVC first.
+      hostPath:
+        path: ""
+        # DirectoryOrCreate makes the directory if it does not exist.
+        type: DirectoryOrCreate
+        # The node (its kubernetes.io/hostname label) that has the directory.
+        # The detection pod is scheduled there. Leave it empty on a
+        # single-node cluster.
+        node: ""
   resources: {}
   nodeSelector: {}
   tolerations: []

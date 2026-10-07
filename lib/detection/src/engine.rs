@@ -206,7 +206,7 @@ fn new_correlation_engine(
 /// Parses the rules at `path`, a directory or one file. A rule that does not
 /// parse is logged and skipped. It does not stop the load.
 fn load_collection(path: &Path) -> Result<SigmaCollection, String> {
-    let collection = if path.is_dir() {
+    let mut collection = if path.is_dir() {
         rsigma_parser::parse_sigma_directory(path)
             .map_err(|e| format!("Error loading rules from {}: {e}", path.display()))?
     } else {
@@ -219,6 +219,15 @@ fn load_collection(path: &Path) -> Result<SigmaCollection, String> {
         for err in collection.errors.iter().take(3) {
             warn!("rule parse error: {err}");
         }
+    }
+
+    // A rule with `enabled: false` in its YAML stays on disk, but the engine
+    // does not compile it.
+    let loaded = collection.rules.len();
+    collection.rules.retain(crate::rulefile::rule_enabled);
+    let disabled = loaded - collection.rules.len();
+    if disabled > 0 {
+        log::info!("skipping {disabled} disabled rule(s)");
     }
 
     Ok(collection)

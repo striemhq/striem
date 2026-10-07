@@ -88,6 +88,45 @@ spec:
       {{- end }}
 ---
 {{- if .Values.detection.rules.persistence.enabled }}
+{{- $persistence := .Values.detection.rules.persistence }}
+{{- $hostPath := $persistence.hostPath | default dict }}
+{{- if $hostPath.path }}
+# A hostPath PersistentVolume for the rules, bound only to the claim below.
+# Retain: deleting the PV object (for example, on `helm uninstall`) never
+# touches the directory on the node.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "striem.detection.rulesVolumeName" . }}
+  labels:
+    {{- include "striem.componentLabels" (dict "root" . "component" "detection") | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ $persistence.size }}
+  accessModes:
+    - {{ $persistence.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ .Release.Namespace }}
+    name: {{ include "striem.detection.fullname" . }}-rules
+  hostPath:
+    path: {{ $hostPath.path | quote }}
+    type: {{ $hostPath.type | default "DirectoryOrCreate" }}
+  {{- with $hostPath.node }}
+  # The directory exists only on this node, so the scheduler puts the
+  # detection pod there.
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ . | quote }}
+  {{- end }}
+---
+{{- end }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -96,11 +135,16 @@ metadata:
     {{- include "striem.componentLabels" (dict "root" . "component" "detection") | nindent 4 }}
 spec:
   accessModes:
-    - {{ .Values.detection.rules.persistence.accessMode }}
+    - {{ $persistence.accessMode }}
   resources:
     requests:
-      storage: {{ .Values.detection.rules.persistence.size }}
-  {{- if .Values.detection.rules.persistence.storageClass }}
-  storageClassName: {{ .Values.detection.rules.persistence.storageClass | quote }}
+      storage: {{ $persistence.size }}
+  {{- if $hostPath.path }}
+  # Bind to the hostPath PV above. The empty class stops the default storage
+  # class from provisioning a different volume.
+  storageClassName: ""
+  volumeName: {{ include "striem.detection.rulesVolumeName" . }}
+  {{- else if $persistence.storageClass }}
+  storageClassName: {{ $persistence.storageClass | quote }}
   {{- end }}
 {{- end }}

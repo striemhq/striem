@@ -25,6 +25,9 @@ fn grpc_error(status: tonic::Status) -> (StatusCode, String) {
     let code = match status.code() {
         Code::NotFound => StatusCode::NOT_FOUND,
         Code::AlreadyExists => StatusCode::CONFLICT,
+        // The change would leave rules that do not load (for example, a
+        // correlation that needs the rule being disabled). It was undone.
+        Code::FailedPrecondition => StatusCode::CONFLICT,
         Code::InvalidArgument => StatusCode::BAD_REQUEST,
         Code::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -111,8 +114,9 @@ async fn patch_rule(
 ///
 /// # Validation and Side Effects
 /// The detection service parses the YAML and checks it. It rejects an id that
-/// is already in use. It adds the rule to the live collection. It also saves the
-/// rule to disk.
+/// is already in use, or that is not safe as a file name. It saves the rule as
+/// `<rule id>.yaml` in its rules directory, then loads it. A rule that does not
+/// load is removed again and gives `400 Bad Request`.
 async fn post_rule(
     State(state): State<ApiState>,
     body: String,

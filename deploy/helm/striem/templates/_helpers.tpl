@@ -91,6 +91,14 @@ reach each other, so the api's generated config and env point at them.
 {{- printf "%s-vector" (include "striem.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+The name of the hostPath PersistentVolume for the detection rules. A PV belongs
+to the whole cluster, so the name includes the namespace.
+*/}}
+{{- define "striem.detection.rulesVolumeName" -}}
+{{- printf "%s-%s-rules" .Release.Namespace (include "striem.detection.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "striem.clickhouse.fullname" -}}
 {{- printf "%s-clickhouse" (include "striem.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
