@@ -18,6 +18,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      # No Docker-link env vars for Services (see api-deployment.yaml).
+      enableServiceLinks: false
       serviceAccountName: {{ include "striem.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

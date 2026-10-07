@@ -18,6 +18,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      # No Docker-link env vars for Services. The api reads every STRIEM_* var
+      # as config, so the `striem-detection` Service's injected
+      # STRIEM_DETECTION_PORT_9000_TCP_PORT would break the `detection.port`
+      # key. Services are reached by DNS name anyway.
+      enableServiceLinks: false
       serviceAccountName: {{ include "striem.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

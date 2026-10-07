@@ -20,6 +20,9 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      # No Docker-link env vars for Services (see api-deployment.yaml). Vector
+      # interpolates ${...} env vars in its config, so keep its env explicit.
+      enableServiceLinks: false
       serviceAccountName: {{ include "striem.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
