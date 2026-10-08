@@ -113,7 +113,12 @@ vector:
     metrics: 9100 # Prometheus (internal_metrics)
   # Expose the ingest ports (http/hec) outside the cluster.
   ingest:
-    type: ClusterIP # set to LoadBalancer or NodePort to expose ingest
+    type: LoadBalancer
+  httpIngest:
+    type: LoadBalancer
+  hecIngest:
+    type: LoadBalancer
+  #  type: ClusterIP # set to LoadBalancer or NodePort to expose ingest
   resources: {}
   nodeSelector: {}
   tolerations: []
@@ -161,7 +166,7 @@ clickhouse:
 # Ingress for the API/UI
 # ---------------------------------------------------------------------------
 ingress:
-  enabled: false
+  enabled: true
   className: ""
   annotations: {}
   host: striem.local
