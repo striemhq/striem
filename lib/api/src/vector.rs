@@ -12,13 +12,23 @@ fn remaps_dir() -> String {
 }
 
 /// The fixed base for every generated config. It has a stdin seed, so the
-/// `ocsf-*` wildcard always has a producer. It also has the `alerts` filter and
-/// the `sink-striem` forwarder.
+/// `logsource-*` wildcard always has a producer. It also has the `final-ocsf`
+/// transform and the `sink-striem` forwarder.
 fn boilerplate(config: &StrIEMConfig) -> VectorConfig {
     let fqdn = config.fqdn.clone().unwrap_or_else(|| config.input.url());
 
     let mut cfg = VectorConfig::default();
 
+    // Vector rejects a config where an input wildcard matches no component.
+    // With no sources configured, nothing matches `sink-striem`'s
+    // `logsource-*`. This stdin source always matches. In a container with no
+    // stdin it reads end-of-file at once and sends no events.
+    cfg.sources.insert(
+        "logsource-dummy".to_string(),
+        Component::Table(toml! {
+            type = "stdin"
+        }),
+    );
 
     cfg.transforms.insert(
         "final-ocsf".to_string(),
