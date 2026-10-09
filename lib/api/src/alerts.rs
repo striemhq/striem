@@ -10,7 +10,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 
 use crate::ApiState;
-use crate::data::Alert;
+use crate::data::{Alert, error_status};
 
 /// The count of alerts that the list endpoint gives.
 const ALERTS_LIMIT: usize = 10;
@@ -40,12 +40,16 @@ async fn get_alerts(
         .unwrap_or(now);
 
     let alerts = state
-        .data
+        .data()
+        .await
         .list_alerts(start, end, ALERTS_LIMIT)
         .await
         .map_err(|e| {
-            log::error!("error fetching alerts: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            let status = error_status(&e);
+            if status == StatusCode::INTERNAL_SERVER_ERROR {
+                log::error!("error fetching alerts: {e}");
+            }
+            (status, e.to_string())
         })?;
 
     Ok(axum::Json(alerts))
@@ -61,7 +65,7 @@ async fn get_alert_by_id(
     let file = params.get("f").map(String::as_str);
     fetch_alert(&id, file, &state)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (error_status(&e), e.to_string()))?
         .map(axum::Json)
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("alert {id} not found")))
 }
@@ -74,7 +78,7 @@ pub(crate) async fn fetch_alert(
     state: &ApiState,
 ) -> anyhow::Result<Option<serde_json::Value>> {
     let file = file.map(str::trim).filter(|f| !f.is_empty());
-    let mut alert = state.data.get_alert(id, file).await?;
+    let mut alert = state.data().await.get_alert(id, file).await?;
     if let Some(alert) = alert.as_mut() {
         strip_nulls(alert);
     }

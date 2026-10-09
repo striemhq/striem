@@ -5,9 +5,9 @@
 //! and the live search. A backend implements the trait. The API calls it
 //! through `ApiState::data`.
 //!
-//! The methods of the trait are stubs by default. Thus [`NoData`] needs no
-//! code, and the endpoints answer with empty results (or with "not available"
-//! for the live search) until a backend is available.
+//! A configured [`Storage`](crate::storage::Storage) backend implements the
+//! trait. With no storage, the API uses [`NoData`]: the endpoints answer with
+//! empty results, and the live search says that no storage is configured.
 
 use std::collections::HashMap;
 
@@ -31,17 +31,27 @@ pub struct Alert {
 
 /// The error of a stub method: the operation has no backend. An endpoint
 /// answers it with `501 Not Implemented`. A backend error is not this type, so
-/// it stays a `500`.
+/// it stays a `500`. The text is the full message for the caller.
 #[derive(Debug)]
 pub(crate) struct Unavailable(pub &'static str);
 
 impl std::fmt::Display for Unavailable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} is not available", self.0)
+        f.write_str(self.0)
     }
 }
 
 impl std::error::Error for Unavailable {}
+
+/// The HTTP status for an error from a [`StrIEMData`] method:
+/// `501 Not Implemented` for [`Unavailable`], else `500`.
+pub(crate) fn error_status(e: &anyhow::Error) -> axum::http::StatusCode {
+    if e.is::<Unavailable>() {
+        axum::http::StatusCode::NOT_IMPLEMENTED
+    } else {
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    }
+}
 
 /// The data source for the alert and live-search endpoints.
 #[tonic::async_trait]
@@ -73,11 +83,16 @@ pub(crate) trait StrIEMData: Send + Sync {
     ///
     /// Stub: gives an error, because there is no search backend.
     async fn search(&self, _query: &str, _limit: usize) -> Result<Value> {
-        Err(Unavailable("live search").into())
+        Err(Unavailable("live search is not available").into())
     }
 }
 
-/// A data source with no data. The API uses it until a backend is available.
+/// A data source with no data. The API uses it when no storage is configured.
 pub(crate) struct NoData;
 
-impl StrIEMData for NoData {}
+#[tonic::async_trait]
+impl StrIEMData for NoData {
+    async fn search(&self, _query: &str, _limit: usize) -> Result<Value> {
+        Err(Unavailable("no storage is configured: add one under Data > Storage").into())
+    }
+}

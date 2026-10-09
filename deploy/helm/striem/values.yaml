@@ -31,7 +31,7 @@ api:
   replicas: 1
   logLevel: info
   service:
-    type: ClusterIP
+    type: LoadBalancer
     port: 8080
   # The api's `db` directory (STRIEM_DB). It holds store.json: the configured
   # sources, destinations, and notifications. Keep it persistent, or the

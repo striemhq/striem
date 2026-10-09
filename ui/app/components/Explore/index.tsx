@@ -18,7 +18,8 @@ interface QueryHistory {
 }
 
 export default function ExploreTab() {
-  const [sql, setSql] = useState<string>("SELECT * FROM findings/detection_finding/**/*.parquet LIMIT 100;");
+  // Detection findings (OCSF class 2004) in the Clickhouse storage's default table.
+  const [sql, setSql] = useState<string>("SELECT * FROM striem_ocsf WHERE class_uid = 2004 ORDER BY time DESC LIMIT 100");
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string>("");
@@ -57,8 +58,15 @@ export default function ExploreTab() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Query execution failed");
+        // The API gives the error as plain text (or as JSON with `error`).
+        const errorText = await response.text();
+        let message = errorText;
+        try {
+          message = JSON.parse(errorText).error || errorText;
+        } catch {
+          // Plain text.
+        }
+        throw new Error(message || `Query execution failed (${response.status})`);
       }
 
       // API returns an array of JSON objects

@@ -1,7 +1,7 @@
-//! Storage layer for sources and sinks.
+//! Storage layer for sources, sinks, and the storage backend.
 //!
 //! [`Store`] is the repository trait. The API state uses it to load and save
-//! the configured [`Source`]s and [`Sink`]s. A backend implements only the
+//! the configured [`Source`]s, [`Sink`]s, and [`Storage`]. A backend implements only the
 //! operations that it supports. The default methods do nothing.
 //!
 //! [`JsonFileStore`] is the default backend. It keeps everything in one JSON
@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use crate::sinks::Sink;
 use crate::sources::Source;
+use crate::storage::Storage;
 
 /// The file name of the store, in the `db` directory of the configuration.
 pub(crate) const STORE_FILE: &str = "store.json";
@@ -45,6 +46,16 @@ pub(crate) trait Store: Send + Sync {
     fn remove_sink(&self, _id: &str) -> Result<()> {
         Ok(())
     }
+
+    /// Loads the storage backend for the Explore and Alerts views, if one is
+    /// configured.
+    fn load_storage(&self) -> Result<Option<Box<dyn Storage>>> {
+        Ok(None)
+    }
+    /// Sets the storage backend, or removes it with `None`.
+    fn set_storage(&self, _storage: Option<&dyn Storage>) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// One saved source or sink: the data that rebuilds it.
@@ -64,6 +75,9 @@ struct StoreFile {
     sources: Vec<Record>,
     #[serde(default)]
     sinks: Vec<Record>,
+    /// The one storage backend, if one is configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage: Option<Record>,
 }
 
 /// A [`Store`] that keeps the sources and sinks in one JSON file.
@@ -208,6 +222,23 @@ impl Store for JsonFileStore {
     fn remove_sink(&self, id: &str) -> Result<()> {
         self.update(|c| c.sinks.retain(|r| r.id != id))
     }
+
+    fn load_storage(&self) -> Result<Option<Box<dyn Storage>>> {
+        let record = {
+            let contents = self.contents.lock().unwrap_or_else(PoisonError::into_inner);
+            contents.storage.clone()
+        };
+        Ok(rebuild(record.into_iter().collect(), "storage").pop())
+    }
+
+    fn set_storage(&self, storage: Option<&dyn Storage>) -> Result<()> {
+        let record = storage.map(|s| Record {
+            kind: s.typename(),
+            id: s.id(),
+            config: s.settings(),
+        });
+        self.update(|c| c.storage = record)
+    }
 }
 
 #[cfg(test)]
@@ -312,6 +343,33 @@ mod tests {
         store.remove_sink("d1").unwrap();
         let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(saved["sinks"][0]["id"], "x");
+    }
+
+    #[test]
+    fn storage_is_saved_replaced_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_FILE);
+        let ch: Box<dyn Storage> = (
+            "clickhouse".to_string(),
+            "st1".to_string(),
+            json!({ "endpoint": "http://ch:8123", "password": "pw" }),
+        )
+            .try_into()
+            .unwrap();
+        {
+            let store = JsonFileStore::open(&path).unwrap();
+            assert!(store.load_storage().unwrap().is_none());
+            store.set_storage(Some(ch.as_ref())).unwrap();
+        }
+
+        let store = JsonFileStore::open(&path).unwrap();
+        let loaded = store.load_storage().unwrap().unwrap();
+        assert_eq!(loaded.id(), "st1");
+        assert_eq!(loaded.typename(), "clickhouse");
+        assert_eq!(loaded.settings()["password"], "pw");
+
+        store.set_storage(None).unwrap();
+        assert!(JsonFileStore::open(&path).unwrap().load_storage().unwrap().is_none());
     }
 
     #[cfg(unix)]

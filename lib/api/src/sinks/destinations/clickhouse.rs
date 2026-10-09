@@ -23,7 +23,7 @@ pub struct Clickhouse {
 }
 
 /// The table that [`CREATE_TABLES_SQL`] makes and the sink writes to.
-const TABLE: &str = "striem_ocsf";
+pub(crate) const TABLE: &str = "striem_ocsf";
 
 /// The DDL that makes the [`TABLE`] destination table. The service runs it
 /// against ClickHouse when you add the sink.

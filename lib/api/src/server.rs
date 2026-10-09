@@ -29,7 +29,7 @@ use striem_config::StrIEMConfig;
 use striem_common::SysMessage;
 
 use crate::{
-    ApiState, data::NoData, features::feature_flag_middleware, routes::create_router,
+    ApiState, features::feature_flag_middleware, routes::create_router,
     store::{JsonFileStore, STORE_FILE, Store},
 };
 
@@ -60,10 +60,7 @@ pub async fn serve(
     );
     info!("detection admin client targeting {}", endpoint);
 
-    // The API does not read the stored event data. The data endpoints use the
-    // stub `NoData`.
-    //
-    // The sources and sinks are saved in a JSON file in the `db` directory
+    // The sources, sinks, and storage are saved in a JSON file in the `db` directory
     // (STRIEM_DB), or in the working directory if that is not set. A store file
     // that is not valid stops the start, so that no change writes over it.
     let store_path = config
@@ -75,6 +72,15 @@ pub async fn serve(
     info!("sources and sinks are saved in {}", store_path.display());
     let sources = Arc::new(RwLock::new(store.load_sources().unwrap_or_default()));
     let sinks = Arc::new(RwLock::new(store.load_sinks().unwrap_or_default()));
+    // The storage backend that the Explore and Alerts views read.
+    let storage = store.load_storage().unwrap_or_else(|e| {
+        error!("cannot load the saved storage: {e}");
+        None
+    });
+    if let Some(storage) = &storage {
+        info!("reading alerts and live search from {}", storage.name());
+    }
+    let storage = Arc::new(RwLock::new(storage.map(Arc::from)));
 
     let ui = config
         .api
@@ -96,7 +102,7 @@ pub async fn serve(
 
     let state = ApiState {
         detections,
-        data: Arc::new(NoData),
+        storage,
         config: config_container,
         sys: sys.clone(),
         features: HeaderValue::from_str(&features.join(","))?,

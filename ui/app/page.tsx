@@ -6,6 +6,7 @@ import RulesTab from "@components/Rules";
 import AlertsTab from "@components/Alerts";
 import SourcesTab from "@components/Sources";
 import DestinationsTab from "@components/Destinations";
+import StorageTab from "@components/Storage";
 import NotificationsTab from "@components/Notifications";
 import ExploreTab from "@components/Explore";
 import DashboardTab from "@components/Dashboard";
@@ -24,6 +25,7 @@ export default function Home() {
         {activeTab === "alerts" && <AlertsTab />}
         {activeTab === "sources" && <SourcesTab />}
         {activeTab === "destinations" && <DestinationsTab />}
+        {activeTab === "storage" && <StorageTab />}
         {activeTab === "notifications" && <NotificationsTab />}
         {activeTab === "explore" && <ExploreTab />}
         {activeTab === "dashboard" && <DashboardTab />}

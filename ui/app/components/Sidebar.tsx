@@ -28,6 +28,7 @@ const sections: Section[] = [
     tabs: [
       { id: "sources", label: "Sources", icon: "🔗" },
       { id: "destinations", label: "Destinations", icon: "🗄️" },
+      { id: "storage", label: "Storage", icon: "💾" },
       { id: "explore", label: "Explore", icon: "🔍" },
     ],
   },
